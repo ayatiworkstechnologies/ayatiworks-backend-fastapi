@@ -54,3 +54,10 @@ celery==5.3.6
 ruff==0.1.14
 pre-commit==3.6.0
 
+python-multipart 
+slowapi 
+passlib[bcrypt] 
+python-jose[cryptography] 
+jinja2 
+pydantic-settings 
+python-magic
