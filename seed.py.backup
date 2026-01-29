@@ -1,0 +1,342 @@
+
+import sys
+from datetime import datetime, date, time
+from app.database import SessionLocal
+from app.models.auth import User, Role, Permission, RolePermission
+from app.models.company import Company, Branch
+from app.models.employee import Employee
+from app.models.organization import Department, Designation
+from app.models.leave import LeaveType
+from app.models.attendance import Shift
+from app.core.permissions import get_all_permissions, PermissionCode
+from app.core.security import hash_password
+
+def seed_db():
+    db = SessionLocal()
+    try:
+        print("=" * 60)
+        print("🌱 SEEDING DATABASE - ROLE-BASED PERMISSIONS SYSTEM")
+        print("=" * 60)
+        
+        # 1. Company
+        print("\n📦 Step 1: Creating Company...")
+        company = db.query(Company).filter_by(code="DEMO").first()
+        if not company:
+            company = Company(
+                name="Demo Company",
+                code="DEMO",
+                email="admin@demo.com",
+                subscription_plan="enterprise",
+                is_active=True
+            )
+            db.add(company)
+            db.commit()
+            db.refresh(company)
+            print("  ✓ Created Company: Demo Company")
+        else:
+            print("  ⊙ Company already exists")
+        
+        # 2. Branch
+        print("\n🏢 Step 2: Creating Branch...")
+        branch = db.query(Branch).filter_by(code="HQ").first()
+        if not branch:
+            branch = Branch(
+                company_id=company.id,
+                name="Headquarters",
+                code="HQ",
+                city="San Francisco",
+                country="USA",
+                is_active=True
+            )
+            db.add(branch)
+            db.commit()
+            db.refresh(branch)
+            print("  ✓ Created Branch: HQ")
+        else:
+            print("  ⊙ Branch already exists")
+            
+        # 3. Permissions
+        print("\n🔐 Step 3: Seeding Permissions...")
+        all_perms = get_all_permissions()
+        # Add SUPER_ADMIN manually if not in list
+        if not any(p["code"] == PermissionCode.SUPER_ADMIN.value for p in all_perms):
+            all_perms.append({"code": PermissionCode.SUPER_ADMIN.value, "name": "Super Admin Access", "module": "admin"})
+
+        perm_map = {} # code -> id
+        perm_created = 0
+        
+        for p_data in all_perms:
+            perm = db.query(Permission).filter_by(code=p_data["code"]).first()
+            if not perm:
+                perm = Permission(
+                    name=p_data["name"],
+                    code=p_data["code"],
+                    module=p_data["module"],
+                    description=f"Permission to {p_data['name']}",
+                    is_active=True
+                )
+                db.add(perm)
+                db.commit()
+                db.refresh(perm)
+                perm_created += 1
+            perm_map[p_data["code"]] = perm.id
+        
+        print(f"  ✓ Permissions in database: {len(perm_map)} ({perm_created} newly created)")
+            
+        # 4. Roles
+        print("\n👥 Step 4: Creating Roles...")
+        roles_data = [
+            {"name": "Super Admin", "code": "SUPER_ADMIN", "scope": "global", "is_system": True},
+            {"name": "Admin", "code": "ADMIN", "scope": "company", "is_system": True},
+            {"name": "Manager", "code": "MANAGER", "scope": "company", "is_system": False},
+            {"name": "HR Manager", "code": "HR", "scope": "company", "is_system": False},
+            {"name": "Employee", "code": "EMPLOYEE", "scope": "company", "is_system": True},
+            {"name": "Client", "code": "CLIENT", "scope": "company", "is_system": True},
+        ]
+        
+        role_map = {} # code -> role obj
+        
+        for r_data in roles_data:
+            role = db.query(Role).filter_by(code=r_data["code"]).first()
+            if not role:
+                role = Role(
+                    name=r_data["name"],
+                    code=r_data["code"],
+                    scope=r_data["scope"],
+                    is_system=r_data["is_system"],
+                    company_id=company.id if r_data["scope"] == "company" else None,
+                    is_active=True
+                )
+                db.add(role)
+                db.commit()
+                db.refresh(role)
+                print(f"  ✓ Created Role: {role.name}")
+            else:
+                print(f"  ⊙ Role already exists: {r_data['name']}")
+            role_map[r_data["code"]] = role
+        
+        # 5. Assign Permissions to Roles
+        print("\n🔑 Step 5: Assigning Permissions to Roles...")
+        
+        # ============== SUPER ADMIN ==============
+        super_admin_role = role_map["SUPER_ADMIN"]
+        if not db.query(RolePermission).filter_by(role_id=super_admin_role.id, permission_id=perm_map[PermissionCode.SUPER_ADMIN.value]).first():
+            db.add(RolePermission(role_id=super_admin_role.id, permission_id=perm_map[PermissionCode.SUPER_ADMIN.value]))
+        print(f"  ✓ Super Admin: SUPER_ADMIN permission assigned (grants all access)")
+            
+        # ============== ADMIN ==============
+        admin_role = role_map["ADMIN"]
+        admin_count = 0
+        for p_code, p_id in perm_map.items():
+            if p_code == PermissionCode.SUPER_ADMIN.value:
+                continue
+            if not db.query(RolePermission).filter_by(role_id=admin_role.id, permission_id=p_id).first():
+                db.add(RolePermission(role_id=admin_role.id, permission_id=p_id))
+                admin_count += 1
+        print(f"  ✓ Admin: {admin_count} permissions assigned (all except SUPER_ADMIN)")
+        
+        # ============== MANAGER ==============
+        manager_role = role_map["MANAGER"]
+        manager_perms = [
+            PermissionCode.DASHBOARD_VIEW,
+            PermissionCode.COMPANY_VIEW, PermissionCode.BRANCH_VIEW, PermissionCode.DEPARTMENT_VIEW,
+            PermissionCode.EMPLOYEE_VIEW, PermissionCode.EMPLOYEE_VIEW_ALL,
+            PermissionCode.ATTENDANCE_VIEW, PermissionCode.ATTENDANCE_VIEW_ALL, PermissionCode.ATTENDANCE_MARK, PermissionCode.ATTENDANCE_APPROVE,
+            PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_VIEW_ALL, PermissionCode.LEAVE_APPLY, PermissionCode.LEAVE_APPROVE,
+            PermissionCode.HOLIDAY_VIEW, PermissionCode.SHIFT_VIEW,
+            PermissionCode.PAYROLL_VIEW, PermissionCode.PAYROLL_VIEW_ALL,
+            PermissionCode.SALARY_VIEW, PermissionCode.SALARY_VIEW_ALL,
+            PermissionCode.PROJECT_VIEW, PermissionCode.PROJECT_VIEW_ALL, PermissionCode.PROJECT_CREATE, PermissionCode.PROJECT_EDIT, PermissionCode.PROJECT_DELETE,
+            PermissionCode.TASK_VIEW, PermissionCode.TASK_VIEW_ALL, PermissionCode.TASK_CREATE, PermissionCode.TASK_EDIT, PermissionCode.TASK_DELETE, PermissionCode.TASK_ASSIGN,
+            PermissionCode.CLIENT_VIEW, PermissionCode.CLIENT_CREATE, PermissionCode.CLIENT_EDIT,
+            PermissionCode.LEAD_VIEW, PermissionCode.LEAD_CREATE, PermissionCode.LEAD_EDIT,
+            PermissionCode.DEAL_VIEW, PermissionCode.DEAL_CREATE, PermissionCode.DEAL_EDIT,
+            PermissionCode.INVOICE_VIEW, PermissionCode.INVOICE_CREATE, PermissionCode.INVOICE_EDIT,
+            PermissionCode.TIMESHEET_VIEW, PermissionCode.TIMESHEET_VIEW_ALL, PermissionCode.TIMESHEET_CREATE, PermissionCode.TIMESHEET_APPROVE,
+            PermissionCode.REPORT_VIEW, PermissionCode.REPORT_EXPORT, PermissionCode.REPORT_CREATE,
+        ]
+        manager_count = 0
+        for p_enum in manager_perms:
+            p_code = p_enum.value
+            if p_code in perm_map:
+                if not db.query(RolePermission).filter_by(role_id=manager_role.id, permission_id=perm_map[p_code]).first():
+                    db.add(RolePermission(role_id=manager_role.id, permission_id=perm_map[p_code]))
+                    manager_count += 1
+        print(f"  ✓ Manager: {manager_count} permissions assigned (project/task/team management)")
+        
+        # ============== HR ==============
+        hr_role = role_map["HR"]
+        hr_perms = [
+            PermissionCode.DASHBOARD_VIEW,
+            PermissionCode.COMPANY_VIEW, PermissionCode.BRANCH_VIEW,
+            PermissionCode.DEPARTMENT_VIEW, PermissionCode.DEPARTMENT_CREATE, PermissionCode.DEPARTMENT_EDIT,
+            PermissionCode.EMPLOYEE_VIEW, PermissionCode.EMPLOYEE_VIEW_ALL, PermissionCode.EMPLOYEE_CREATE, PermissionCode.EMPLOYEE_EDIT, PermissionCode.EMPLOYEE_DELETE,
+            PermissionCode.ATTENDANCE_VIEW, PermissionCode.ATTENDANCE_VIEW_ALL, PermissionCode.ATTENDANCE_MARK, PermissionCode.ATTENDANCE_EDIT, PermissionCode.ATTENDANCE_APPROVE,
+            PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_VIEW_ALL, PermissionCode.LEAVE_APPLY, PermissionCode.LEAVE_APPROVE, PermissionCode.LEAVE_CANCEL,
+            PermissionCode.HOLIDAY_VIEW, PermissionCode.HOLIDAY_MANAGE,
+            PermissionCode.SHIFT_VIEW, PermissionCode.SHIFT_MANAGE,
+            PermissionCode.PAYROLL_VIEW, PermissionCode.PAYROLL_VIEW_ALL, PermissionCode.PAYROLL_MANAGE,
+            PermissionCode.SALARY_VIEW, PermissionCode.SALARY_VIEW_ALL, PermissionCode.SALARY_CREATE, PermissionCode.SALARY_EDIT, PermissionCode.SALARY_DELETE, PermissionCode.SALARY_APPROVE,
+            PermissionCode.PROJECT_VIEW, PermissionCode.PROJECT_VIEW_ALL,
+            PermissionCode.TASK_VIEW, PermissionCode.TASK_VIEW_ALL,
+            PermissionCode.REPORT_VIEW, PermissionCode.REPORT_EXPORT, PermissionCode.REPORT_CREATE,
+        ]
+        hr_count = 0
+        for p_enum in hr_perms:
+            p_code = p_enum.value
+            if p_code in perm_map:
+                if not db.query(RolePermission).filter_by(role_id=hr_role.id, permission_id=perm_map[p_code]).first():
+                    db.add(RolePermission(role_id=hr_role.id, permission_id=perm_map[p_code]))
+                    hr_count += 1
+        print(f"  ✓ HR: {hr_count} permissions assigned (employee/leave/payroll management)")
+        
+        # ============== EMPLOYEE ==============
+        employee_role = role_map["EMPLOYEE"]
+        employee_perms = [
+            PermissionCode.DASHBOARD_VIEW,
+            PermissionCode.EMPLOYEE_VIEW,
+            PermissionCode.ATTENDANCE_VIEW, PermissionCode.ATTENDANCE_MARK,
+            PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_APPLY,
+            PermissionCode.HOLIDAY_VIEW, PermissionCode.SHIFT_VIEW,
+            PermissionCode.PAYROLL_VIEW, PermissionCode.SALARY_VIEW,
+            PermissionCode.PROJECT_VIEW, PermissionCode.TASK_VIEW,
+            PermissionCode.TIMESHEET_VIEW, PermissionCode.TIMESHEET_CREATE,
+        ]
+        employee_count = 0
+        for p_enum in employee_perms:
+            p_code = p_enum.value
+            if p_code in perm_map:
+                if not db.query(RolePermission).filter_by(role_id=employee_role.id, permission_id=perm_map[p_code]).first():
+                    db.add(RolePermission(role_id=employee_role.id, permission_id=perm_map[p_code]))
+                    employee_count += 1
+        print(f"  ✓ Employee: {employee_count} permissions assigned (view own data)")
+        
+        # ============== CLIENT ==============
+        client_role = role_map["CLIENT"]
+        client_perms = [
+            PermissionCode.DASHBOARD_VIEW,
+            PermissionCode.CLIENT_VIEW_OWN,
+            PermissionCode.PROJECT_VIEW_OWN,
+            PermissionCode.TASK_VIEW,
+            PermissionCode.INVOICE_VIEW_OWN,
+        ]
+        client_count = 0
+        for p_enum in client_perms:
+            p_code = p_enum.value
+            if p_code in perm_map:
+                if not db.query(RolePermission).filter_by(role_id=client_role.id, permission_id=perm_map[p_code]).first():
+                    db.add(RolePermission(role_id=client_role.id, permission_id=perm_map[p_code]))
+                    client_count += 1
+        print(f"  ✓ Client: {client_count} permissions assigned (view own projects/invoices)")
+        
+        db.commit()
+        print("\n  ✅ All role permissions assigned successfully!")
+        
+        # 6. Create Test Users for Each Role
+        print("\n👤 Step 6: Creating Test Users...")
+        
+        test_users = [
+            {"email": "admin@demo.com", "password": "admin123", "first_name": "Super", "last_name": "Admin", "role_code": "SUPER_ADMIN"},
+            {"email": "admin2@demo.com", "password": "admin123", "first_name": "System", "last_name": "Admin", "role_code": "ADMIN"},
+            {"email": "manager@demo.com", "password": "manager123", "first_name": "Project", "last_name": "Manager", "role_code": "MANAGER"},
+            {"email": "hr@demo.com", "password": "hr123", "first_name": "HR", "last_name": "Manager", "role_code": "HR"},
+            {"email": "employee@demo.com", "password": "employee123", "first_name": "John", "last_name": "Employee", "role_code": "EMPLOYEE"},
+            {"email": "client@demo.com", "password": "client123", "first_name": "Demo", "last_name": "Client", "role_code": "CLIENT"},
+        ]
+        
+        for user_data in test_users:
+            existing_user = db.query(User).filter_by(email=user_data["email"]).first()
+            if not existing_user:
+                new_user = User(
+                    email=user_data["email"],
+                    password_hash=hash_password(user_data["password"]),
+                    first_name=user_data["first_name"],
+                    last_name=user_data["last_name"],
+                    role_id=role_map[user_data["role_code"]].id,
+                    company_id=company.id,
+                    branch_id=branch.id,
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(new_user)
+                print(f"  ✓ Created: {user_data['email']} / {user_data['password']} ({user_data['role_code']})")
+            else:
+                print(f "  ⊙ Already exists: {user_data['email']}")
+        
+        db.commit()
+        print("\n  ✅ All test users created!")
+            
+        # 7. Departments
+        print("\n🏛️  Step 7: Creating Departments...")
+        dept_names = ["Engineering", "HR", "Sales", "Marketing"]
+        dept_created = 0
+        for d_name in dept_names:
+            dept = db.query(Department).filter_by(name=d_name, company_id=company.id).first()
+            if not dept:
+                dept = Department(name=d_name, code=d_name[:3].upper(), company_id=company.id)
+                db.add(dept)
+                dept_created += 1
+        db.commit()
+        print(f"  ✓ Departments: {len(dept_names)} total ({dept_created} newly created)")
+        
+        # 8. Designations
+        print("\n💼 Step 8: Creating Designations...")
+        desig_names = ["Manager", "Lead", "Senior", "Junior", "Intern"]
+        eng_dept = db.query(Department).filter_by(name="Engineering").first()
+        desig_created = 0
+        if eng_dept:
+            for des in desig_names:
+                d_obj = db.query(Designation).filter_by(name=f"{des} Engineer", department_id=eng_dept.id).first()
+                if not d_obj:
+                    d_obj = Designation(
+                        name=f"{des} Engineer", 
+                        code=f"ENG-{des[:3].upper()}", 
+                        department_id=eng_dept.id
+                    )
+                    db.add(d_obj)
+                    desig_created += 1
+        db.commit()
+        print(f"  ✓ Designations: {len(desig_names)} total ({desig_created} newly created)")
+        
+        # 9. Initial Leave Types
+        print("\n🏖️  Step 9: Creating Leave Types...")
+        leave_types = [
+            {"name": "Annual Leave", "code": "AL", "days": 12},
+            {"name": "Sick Leave", "code": "SL", "days": 6},
+            {"name": "Casual Leave", "code": "CL", "days": 6},
+        ]
+        leave_created = 0
+        for lt in leave_types:
+            lobj = db.query(LeaveType).filter_by(code=lt["code"], company_id=company.id).first()
+            if not lobj:
+                lobj = LeaveType(
+                    company_id=company.id,
+                    name=lt["name"],
+                    code=lt["code"],
+                    days_allowed=lt["days"],
+                    is_active=True
+                )
+                db.add(lobj)
+                leave_created += 1
+        db.commit()
+        print(f"  ✓ Leave Types: {len(leave_types)} total ({leave_created} newly created)")
+        
+        print("\n" + "=" * 60)
+        print("✅ DATABASE SEEDING COMPLETED SUCCESSFULLY!")
+        print("=" * 60)
+        print("\n📋 TEST USER CREDENTIALS:")
+        print("-" * 60)
+        for user in test_users:
+            print(f"  {user['role_code']:15} | {user['email']:25} | {user['password']}")
+        print("-" * 60)
+            
+    except Exception as e:
+        print(f"\n❌ Error seeding database: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+    finally:
+        db.close()
+
+if __name__ == "__main__":
+    seed_db()

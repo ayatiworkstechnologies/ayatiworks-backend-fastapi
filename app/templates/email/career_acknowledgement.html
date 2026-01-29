@@ -1,0 +1,19 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>Application Received! 🚀</h2>
+
+<p>Hi {{ first_name }},</p>
+
+<p>Thank you for your interest in joining {{ company_name }}. We have successfully received your application for the position of <strong>{{ position }}</strong>.</p>
+
+<p>Our recruiting team will review your application and reach out if your qualifications match our requirements for the role.</p>
+
+<div class="info-box">
+    <p><strong>Application Reference:</strong> #{{ application_id }}</p>
+</div>
+
+<p>Good luck!</p>
+
+<p>Best regards,<br>Talent Acquisition Team<br>{{ company_name }}</p>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>New Contact Enquiry 📬</h2>
+
+<p>Hi Admin,</p>
+
+<p>You have received a new contact enquiry from the public website.</p>
+
+<div class="info-box">
+    <p><span class="label">Name:</span> <span class="value">{{ name }}</span></p>
+    <p><span class="label">Email:</span> <span class="value">{{ email }}</span></p>
+    <p><span class="label">Phone:</span> <span class="value">{{ phone }}</span></p>
+    <p><span class="label">Subject:</span> <span class="value">{{ subject }}</span></p>
+</div>
+
+<div class="info-box" style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
+    <p class="label">Message:</p>
+    <p style="white-space: pre-wrap;">{{ message }}</p>
+</div>
+
+<p style="font-size: 12px; color: #999;">
+    Submitted via standard contact form.<br>
+    IP Address: {{ ip_address }}
+</p>
+{% endblock %}

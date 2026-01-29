@@ -1,0 +1,28 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>{{ notification_title }}</h2>
+
+<p>Hi {{ recipient_name }},</p>
+
+<p>{{ notification_message }}</p>
+
+{% if details %}
+<div class="info-box">
+    <p><strong>Details:</strong></p>
+    {% for key, value in details.items() %}
+    <p><strong>{{ key }}:</strong> {{ value }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if action_url %}
+<a href="{{ action_url }}" class="button">{{ action_text|default('View Details') }}</a>
+{% endif %}
+
+{% if footer_note %}
+<p style="margin-top: 30px; font-size: 14px; color: #666; padding-top: 20px; border-top: 1px solid #e9ecef;">
+    {{ footer_note }}
+</p>
+{% endif %}
+{% endblock %}

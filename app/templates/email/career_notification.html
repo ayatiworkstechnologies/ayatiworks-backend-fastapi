@@ -1,0 +1,40 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>New Job Application 💼</h2>
+
+<p>Hi HR Team,</p>
+
+<p>A new job application has been submitted via the careers page.</p>
+
+<div class="info-box">
+    <p><span class="label">Position:</span> <span class="value">{{ position }}</span></p>
+    <p><span class="label">Candidate:</span> <span class="value">{{ first_name }} {{ last_name }}</span></p>
+    <p><span class="label">Email:</span> <span class="value">{{ email }}</span></p>
+    <p><span class="label">Phone:</span> <span class="value">{{ phone }}</span></p>
+    <p><span class="label">Experience:</span> <span class="value">{{ experience_years }} years</span></p>
+    <p><span class="label">Current Company:</span> <span class="value">{{ current_company }}</span></p>
+</div>
+
+<div class="info-box">
+    <p><strong>Links:</strong></p>
+    {% if linkedin_url %}
+    <p><a href="{{ linkedin_url }}">LinkedIn Profile</a></p>
+    {% endif %}
+    {% if portfolio_url %}
+    <p><a href="{{ portfolio_url }}">Portfolio</a></p>
+    {% endif %}
+    {% if resume_url %}
+    <p><a href="{{ resume_url }}" class="button" style="padding: 5px 10px; font-size: 12px;">Download Resume</a></p>
+    {% else %}
+    <p>No resume uploaded.</p>
+    {% endif %}
+</div>
+
+{% if cover_letter %}
+<div class="info-box" style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
+    <p class="label">Cover Letter:</p>
+    <p style="white-space: pre-wrap;">{{ cover_letter }}</p>
+</div>
+{% endif %}
+{% endblock %}

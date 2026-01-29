@@ -1,0 +1,19 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>We received your message! 👋</h2>
+
+<p>Hi {{ name }},</p>
+
+<p>Thank you for contacting {{ company_name }}. We have received your enquiry and will get back to you as soon as possible.</p>
+
+<div class="info-box">
+    <p><strong>Your Enquiry Details:</strong></p>
+    <p><span class="label">Subject:</span> <span class="value">{{ subject }}</span></p>
+    <p><span class="label">Reference ID:</span> <span class="value">#{{ reference_id }}</span></p>
+</div>
+
+<p>Our typical response time is 24-48 hours. In the meantime, feel free to check our <a href="{{ company_website }}">website</a> for more information.</p>
+
+<p>Best regards,<br>{{ company_name }} Team</p>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>Welcome to {{ company_name }}! 🎉</h2>
+
+<p>Hi {{ employee_name }},</p>
+
+<p>We're thrilled to have you join our team! Your employee account has been successfully created.</p>
+
+<div class="info-box">
+    <p><strong>Your Login Details:</strong></p>
+    <p><strong>Email:</strong> {{ email }}</p>
+    <p><strong>Employee ID:</strong> {{ employee_id }}</p>
+    {% if temp_password %}
+    <p><strong>Temporary Password:</strong> {{ temp_password }}</p>
+    {% endif %}
+</div>
+
+{% if temp_password %}
+<p>⚠️ <strong>Important:</strong> Please change your password after your first login for security purposes.</p>
+{% endif %}
+
+<p>Click the button below to access your account:</p>
+
+<a href="{{ login_url }}" class="button">Login to Your Account</a>
+
+<p><strong>What's Next?</strong></p>
+<ul style="color: #666; margin-left: 20px; line-height: 1.8;">
+    <li>Complete your employee profile</li>
+    <li>Review company policies and documents</li>
+    <li>Set up your attendance preferences</li>
+    <li>Connect with your team members</li>
+</ul>
+
+<p>If you have any questions or need assistance, please don't hesitate to reach out to our HR team.</p>
+
+<p style="margin-top: 30px;">
+    Best regards,<br>
+    <strong>HR Team</strong><br>
+    {{ company_name }}
+</p>
+{% endblock %}

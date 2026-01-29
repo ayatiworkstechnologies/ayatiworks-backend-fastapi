@@ -1,0 +1,29 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>Two-Factor Authentication Code 🔒</h2>
+
+<p>Hi {{ user_name }},</p>
+
+<p>Your two-factor authentication code for {{ company_name }} is:</p>
+
+<div class="info-box" style="text-align: center;">
+    <p style="font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 4px; margin: 20px 0;">
+        {{ otp_code }}
+    </p>
+    <p style="font-size: 13px; color: #999;">This code expires in {{ expiry_minutes }} minutes</p>
+</div>
+
+<p>Enter this code to complete your login.</p>
+
+<p style="color: #dc3545; margin-top: 25px;">
+    <strong>⚠️ Security Alert:</strong> If you didn't attempt to log in, please contact support immediately and change your password.
+</p>
+
+<p style="margin-top: 30px; font-size: 14px; color: #666;">
+    Login attempt details:<br>
+    <strong>Time:</strong> {{ login_time }}<br>
+    <strong>IP Address:</strong> {{ ip_address }}<br>
+    <strong>Device:</strong> {{ device_info }}
+</p>
+{% endblock %}

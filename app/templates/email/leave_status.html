@@ -1,0 +1,44 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>Leave Request {{ status_emoji }}</h2>
+
+<p>Hi {{ employee_name }},</p>
+
+<p>Your leave request has been <strong style="color: {{ status_color }};">{{ status }}</strong>.</p>
+
+<div class="info-box">
+    <p><strong>Leave Details:</strong></p>
+    <p><strong>Type:</strong> {{ leave_type }}</p>
+    <p><strong>From:</strong> {{ from_date }}</p>
+    <p><strong>To:</strong> {{ to_date }}</p>
+    <p><strong>Duration:</strong> {{ duration }} day(s)</p>
+    <p><strong>Status:</strong> <span style="color: {{ status_color }};">{{ status }}</span></p>
+</div>
+
+{% if reason %}
+<p><strong>Reason:</strong> {{ reason }}</p>
+{% endif %}
+
+{% if approver_comments %}
+<div class="info-box" style="border-left-color: {{ status_color }};">
+    <p><strong>{{ approver_name }}'s Comments:</strong></p>
+    <p style="font-style: italic;">"{{ approver_comments }}"</p>
+</div>
+{% endif %}
+
+{% if status == 'Approved' %}
+<p style="color: #28a745;">✓ Your leave has been approved. Please ensure proper handover of your responsibilities.</p>
+{% elif status == 'Rejected' %}
+<p style="color: #dc3545;">Your leave request was not approved. Please contact your manager for more details.</p>
+{% endif %}
+
+<p><strong>Current Leave Balance:</strong></p>
+<ul style="color: #666; margin-left: 20px;">
+    {% for balance in leave_balances %}
+    <li>{{ balance.type }}: {{ balance.available }} days remaining</li>
+    {% endfor %}
+</ul>
+
+<a href="{{ dashboard_url }}" class="button">View Leave Dashboard</a>
+{% endblock %}

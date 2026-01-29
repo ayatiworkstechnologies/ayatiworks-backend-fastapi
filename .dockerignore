@@ -1,0 +1,28 @@
+# Ignore everything
+*
+
+# Include only what's needed
+!app/
+!requirements.txt
+!seed.py
+
+# Exclude from included directories
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/*.egg-info
+
+# Exclude sensitive files
+.env
+.env.*
+!.env.example
+
+# Exclude dev/test files
+tests/
+*.md
+.git/
+.gitignore
+.vscode/
+.idea/
