@@ -158,23 +158,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
-# CORS Middleware - Allow any localhost port in DEBUG mode
-if settings.DEBUG:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origin_regex=r"http://localhost:\d+",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# CORS Middleware - Allow all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # Include API routers
