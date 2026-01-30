@@ -164,6 +164,16 @@ class PermissionCode(str, Enum):
     # Audit
     AUDIT_VIEW = "audit.view"
 
+    # Meta Ads
+    META_VIEW = "meta.view"
+    META_MANAGE = "meta.manage" # Sync, Edit Config
+
+    # Blog
+    BLOG_VIEW = "blog.view"
+    BLOG_CREATE = "blog.create"
+    BLOG_EDIT = "blog.edit"
+    BLOG_DELETE = "blog.delete"
+
 
 def get_all_permissions() -> List[dict]:
     """Get all permissions with metadata."""
@@ -298,6 +308,16 @@ def get_all_permissions() -> List[dict]:
         
         # Audit
         {"code": "audit.view", "name": "View Audit Logs", "module": "audit"},
+        
+        # Meta Ads
+        {"code": "meta.view", "name": "View Meta Ads", "module": "meta"},
+        {"code": "meta.manage", "name": "Manage Meta Ads", "module": "meta"},
+        
+        # Blog
+        {"code": "blog.view", "name": "View Blog Posts", "module": "blog"},
+        {"code": "blog.create", "name": "Create Blog Posts", "module": "blog"},
+        {"code": "blog.edit", "name": "Edit Blog Posts", "module": "blog"},
+        {"code": "blog.delete", "name": "Delete Blog Posts", "module": "blog"},
     ]
     return permissions
 

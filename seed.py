@@ -10,6 +10,7 @@ from app.models.leave import LeaveType
 from app.models.attendance import Shift
 from app.core.permissions import get_all_permissions, PermissionCode
 from app.core.security import hash_password
+from app.config import settings
 
 def seed_db():
     db = SessionLocal()
@@ -23,22 +24,22 @@ def seed_db():
         company = db.query(Company).filter_by(code="DEMO").first()
         if not company:
             company = Company(
-                name="Ayatoworks",
+                name="Ayatiworks",
                 code="DEMO",
-                email="admin@ayatoworks.com",
+                email="admin@ayatiworks.com",
                 subscription_plan="enterprise",
                 is_active=True
             )
             db.add(company)
             db.commit()
             db.refresh(company)
-            print("  Created Company: Ayatoworks")
+            print("  Created Company: ayatiworks")
         else:
             # Update existing company
-            company.name = "Ayatoworks"
-            company.email = "admin@ayatoworks.com"
+            company.name = "Ayatiworks"
+            company.email = "admin@ayatiworks.com"
             db.commit()
-            print("  Updated Company: Ayatoworks")
+            print("  Updated Company: ayatiworks")
         
         # 2. Branch
         print("\nStep 2: Creating Branch...")
@@ -140,26 +141,117 @@ def seed_db():
                         if not db.query(RolePermission).filter_by(role_id=role.id, permission_id=p_id).first():
                             db.add(RolePermission(role_id=role.id, permission_id=p_id))
         
-        # MANAGER - Key permissions
+        # MANAGER - Extended permissions (projects, tasks, teams, clients, own attendance/leave/payroll)
         manager_perms = [
-            PermissionCode.DASHBOARD_VIEW, PermissionCode.PROJECT_VIEW_ALL, PermissionCode.TASK_VIEW_ALL, 
-            PermissionCode.EMPLOYEE_VIEW, PermissionCode.TEAM_VIEW, PermissionCode.REPORT_VIEW
+            PermissionCode.DASHBOARD_VIEW,
+            # Projects & Tasks
+            PermissionCode.PROJECT_VIEW, PermissionCode.PROJECT_VIEW_ALL,
+            PermissionCode.PROJECT_CREATE, PermissionCode.PROJECT_EDIT,
+            PermissionCode.TASK_VIEW, PermissionCode.TASK_VIEW_ALL,
+            PermissionCode.TASK_CREATE, PermissionCode.TASK_EDIT, PermissionCode.TASK_ASSIGN,
+            # Team management
+            PermissionCode.TEAM_VIEW, PermissionCode.TEAM_CREATE, PermissionCode.TEAM_EDIT,
+            PermissionCode.TEAM_MANAGE_MEMBERS,
+            # Employee view
+            PermissionCode.EMPLOYEE_VIEW, PermissionCode.EMPLOYEE_VIEW_ALL,
+            # Own Attendance & Leave
+            PermissionCode.ATTENDANCE_VIEW, PermissionCode.ATTENDANCE_MARK,
+            PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_APPLY,
+            # Payroll (own)
+            PermissionCode.PAYROLL_VIEW, PermissionCode.SALARY_VIEW,
+            # Clients
+            PermissionCode.CLIENT_VIEW,
+            # Invoices
+            PermissionCode.INVOICE_VIEW,
+            # Reports
+            PermissionCode.REPORT_VIEW, PermissionCode.REPORT_EXPORT,
+            # Blog (full access)
+            PermissionCode.BLOG_VIEW, PermissionCode.BLOG_CREATE,
+            PermissionCode.BLOG_EDIT, PermissionCode.BLOG_DELETE,
         ]
         for p_enum in manager_perms:
             if p_enum.value in perm_map:
                 if not db.query(RolePermission).filter_by(role_id=role_map["MANAGER"].id, permission_id=perm_map[p_enum.value]).first():
                      db.add(RolePermission(role_id=role_map["MANAGER"].id, permission_id=perm_map[p_enum.value]))
 
-        # EMPLOYEE - Basic permissions
+        # EMPLOYEE - Basic permissions (own details, projects, tasks, attendance, leave, payroll)
         employee_perms = [
-            PermissionCode.DASHBOARD_VIEW, PermissionCode.PROJECT_VIEW, PermissionCode.TASK_VIEW,
-            PermissionCode.EMPLOYEE_VIEW, PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_APPLY,
-            PermissionCode.ATTENDANCE_VIEW, PermissionCode.ATTENDANCE_MARK
+            PermissionCode.DASHBOARD_VIEW,
+            # Projects & Tasks (own/assigned)
+            PermissionCode.PROJECT_VIEW, PermissionCode.TASK_VIEW,
+            # Employee (own profile)
+            PermissionCode.EMPLOYEE_VIEW,
+            # Attendance (own)
+            PermissionCode.ATTENDANCE_VIEW, PermissionCode.ATTENDANCE_MARK,
+            # Leave (own)
+            PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_APPLY,
+            # Payroll (own)
+            PermissionCode.PAYROLL_VIEW, PermissionCode.SALARY_VIEW,
+            # Team view
+            PermissionCode.TEAM_VIEW,
         ]
         for p_enum in employee_perms:
              if p_enum.value in perm_map:
                 if not db.query(RolePermission).filter_by(role_id=role_map["EMPLOYEE"].id, permission_id=perm_map[p_enum.value]).first():
                      db.add(RolePermission(role_id=role_map["EMPLOYEE"].id, permission_id=perm_map[p_enum.value]))
+
+        # CLIENT - Portal permissions (own projects, invoices)
+        client_perms = [
+            PermissionCode.DASHBOARD_VIEW,
+            PermissionCode.PROJECT_VIEW_OWN, PermissionCode.TASK_VIEW,
+            PermissionCode.INVOICE_VIEW_OWN,
+            PermissionCode.CLIENT_VIEW_OWN,
+        ]
+        for p_enum in client_perms:
+            if p_enum.value in perm_map:
+                if not db.query(RolePermission).filter_by(role_id=role_map["CLIENT"].id, permission_id=perm_map[p_enum.value]).first():
+                     db.add(RolePermission(role_id=role_map["CLIENT"].id, permission_id=perm_map[p_enum.value]))
+
+        # HR - Full HR management + Projects, Tasks, Clients, Teams
+        hr_perms = [
+            PermissionCode.DASHBOARD_VIEW,
+            # Employee management
+            PermissionCode.EMPLOYEE_VIEW, PermissionCode.EMPLOYEE_VIEW_ALL,
+            PermissionCode.EMPLOYEE_CREATE, PermissionCode.EMPLOYEE_EDIT, PermissionCode.EMPLOYEE_DELETE,
+            # Department management
+            PermissionCode.DEPARTMENT_VIEW, PermissionCode.DEPARTMENT_CREATE,
+            PermissionCode.DEPARTMENT_EDIT, PermissionCode.DEPARTMENT_DELETE,
+            # Designation management
+            PermissionCode.DESIGNATION_VIEW, PermissionCode.DESIGNATION_CREATE,
+            PermissionCode.DESIGNATION_EDIT, PermissionCode.DESIGNATION_DELETE,
+            # Attendance management (ALL)
+            PermissionCode.ATTENDANCE_VIEW, PermissionCode.ATTENDANCE_VIEW_ALL,
+            PermissionCode.ATTENDANCE_MARK, PermissionCode.ATTENDANCE_EDIT, PermissionCode.ATTENDANCE_APPROVE,
+            # Leave management (ALL + approvals)
+            PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_VIEW_ALL,
+            PermissionCode.LEAVE_APPLY, PermissionCode.LEAVE_APPROVE, PermissionCode.LEAVE_CANCEL,
+            # Shift management
+            PermissionCode.SHIFT_VIEW, PermissionCode.SHIFT_MANAGE,
+            # Holiday management
+            PermissionCode.HOLIDAY_VIEW, PermissionCode.HOLIDAY_MANAGE,
+            # Payroll & Salary (ALL)
+            PermissionCode.PAYROLL_VIEW, PermissionCode.PAYROLL_VIEW_ALL, PermissionCode.PAYROLL_MANAGE,
+            PermissionCode.SALARY_VIEW, PermissionCode.SALARY_VIEW_ALL,
+            # Company/Branch view
+            PermissionCode.COMPANY_VIEW, PermissionCode.BRANCH_VIEW,
+            # Users view
+            PermissionCode.USER_VIEW,
+            # Projects & Tasks (ALL)
+            PermissionCode.PROJECT_VIEW, PermissionCode.PROJECT_VIEW_ALL,
+            PermissionCode.TASK_VIEW, PermissionCode.TASK_VIEW_ALL,
+            # Clients
+            PermissionCode.CLIENT_VIEW,
+            # Teams
+            PermissionCode.TEAM_VIEW, PermissionCode.TEAM_CREATE, PermissionCode.TEAM_EDIT,
+            # Invoices
+            PermissionCode.INVOICE_VIEW,
+            # Reports
+            PermissionCode.REPORT_VIEW, PermissionCode.REPORT_EXPORT,
+        ]
+        for p_enum in hr_perms:
+            if p_enum.value in perm_map:
+                if not db.query(RolePermission).filter_by(role_id=role_map["HR"].id, permission_id=perm_map[p_enum.value]).first():
+                     db.add(RolePermission(role_id=role_map["HR"].id, permission_id=perm_map[p_enum.value]))
 
         db.commit()
 
@@ -220,11 +312,11 @@ def seed_db():
         # Define users to create
         users_to_create = [
             {
-                "email": "admin@ayatoworks.com", "password": "admin123", "role": "SUPER_ADMIN", 
+                "email": "admin@ayatiworks.com", "password": "admin123", "role": "SUPER_ADMIN", 
                 "first": "Super", "last": "Admin", "dept": "Management", "desig": "CEO"
             },
             {
-                "email": "admin1@ayatoworks.com", "password": "admin123", "role": "ADMIN", 
+                "email": "admin1@ayatiworks.com", "password": "admin123", "role": "ADMIN", 
                 "first": "Tech", "last": "Admin", "dept": "Management", "desig": "CTO"
             },
            
@@ -259,7 +351,7 @@ def seed_db():
                 
                 employee = Employee(
                     user_id=user.id,
-                    employee_code=f"EMP{user.id:03d}",
+                    employee_code=f"{settings.EMPLOYEE_ID_PREFIX}{str(user.id).zfill(settings.EMPLOYEE_ID_LENGTH)}",
                     company_id=company.id,
                     branch_id=branch.id,
                     department_id=dept.id if dept else None,
@@ -303,8 +395,7 @@ def seed_db():
                  phone="555-0199",
                  company_id=company.id,
                  address="123 Client St",
-                 status="active",
-                 user_id=client_user.id # Link to user if your model supports it, otherwise separate
+                 status="active"
              )
              db.add(client_profile)
              db.commit()

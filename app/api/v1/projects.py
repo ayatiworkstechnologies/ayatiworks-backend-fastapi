@@ -4,7 +4,7 @@ Project and Task API routes.
 
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.schemas.common import PaginatedResponse, MessageResponse
 from app.api.deps import get_current_active_user, get_db, PermissionChecker
@@ -18,6 +18,7 @@ from app.core.exceptions import (
 )
 from app.models.auth import User
 from app.models.project import Project, Task, Milestone, ProjectMember
+from app.models.employee import Employee
 from app.models.sprint import TimeEntry, Timer
 from app.services.employee_service import EmployeeService
 from app.schemas.project import (
@@ -46,7 +47,9 @@ async def list_projects(
     db: Session = Depends(get_db)
 ):
     """List all projects."""
-    query = db.query(Project).filter(Project.is_deleted == False)
+    query = db.query(Project).options(
+        joinedload(Project.client)
+    ).filter(Project.is_deleted == False)
 
     # Filter projects based on permissions
     from app.core.permissions import PermissionCode
@@ -118,7 +121,7 @@ async def get_project(
     ).first()
     
     if not project:
-        raise ResourceNotFoundError("Project", Project_id)
+        raise ResourceNotFoundError("Project", project_id)
     
     response = ProjectResponse.model_validate(project)
     response.client_name = project.client.name if project.client else None
@@ -199,7 +202,7 @@ async def update_project(
     ).first()
     
     if not project:
-        raise ResourceNotFoundError("Project", Project_id)
+        raise ResourceNotFoundError("Project", project_id)
     
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -225,7 +228,7 @@ async def delete_project(
     ).first()
     
     if not project:
-        raise ResourceNotFoundError("Project", Project_id)
+        raise ResourceNotFoundError("Project", project_id)
     
     project.soft_delete(current_user.id)
     db.commit()
@@ -251,7 +254,7 @@ async def list_project_members(
     ).first()
     
     if not project:
-        raise ResourceNotFoundError("Project", Project_id)
+        raise ResourceNotFoundError("Project", project_id)
     
     items = []
     for member in project.members:
@@ -283,7 +286,7 @@ async def add_project_member(
     ).first()
     
     if not project:
-        raise ResourceNotFoundError("Project", Project_id)
+        raise ResourceNotFoundError("Project", project_id)
     
     # Check if already a member
     existing = db.query(ProjectMember).filter(
@@ -359,7 +362,10 @@ async def list_tasks(
     db: Session = Depends(get_db)
 ):
     """List all tasks with full details."""
-    query = db.query(Task).filter(Task.is_deleted == False)
+    query = db.query(Task).options(
+        joinedload(Task.project),
+        joinedload(Task.assignee).joinedload(Employee.user)
+    ).filter(Task.is_deleted == False)
     
     # Filter tasks based on permissions
     from app.core.permissions import PermissionCode
@@ -477,7 +483,7 @@ async def get_task(
     ).first()
     
     if not task:
-        raise ResourceNotFoundError("Task", Task_id)
+        raise ResourceNotFoundError("Task", task_id)
     
     response = TaskResponse.model_validate(task)
     response.project_name = task.project.name if task.project else None
@@ -499,7 +505,7 @@ async def delete_task(
     ).first()
     
     if not task:
-        raise ResourceNotFoundError("Task", Task_id)
+        raise ResourceNotFoundError("Task", task_id)
     
     task.soft_delete(current_user.id)
     db.commit()
@@ -699,7 +705,7 @@ async def update_milestone(
     ).first()
     
     if not milestone:
-        raise ResourceNotFoundError("Milestone", Milestone_id)
+        raise ResourceNotFoundError("Milestone", milestone_id)
     
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -725,7 +731,7 @@ async def delete_milestone(
     ).first()
     
     if not milestone:
-        raise ResourceNotFoundError("Milestone", Milestone_id)
+        raise ResourceNotFoundError("Milestone", milestone_id)
     
     milestone.soft_delete(current_user.id)
     db.commit()

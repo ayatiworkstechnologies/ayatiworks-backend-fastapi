@@ -155,7 +155,7 @@ async def cancel_leave(
         )
     
     if not leave:
-        raise ResourceNotFoundError("Leave", Leave_id)
+        raise ResourceNotFoundError("Leave", leave_id)
     
     return LeaveResponse.model_validate(leave)
 
@@ -213,7 +213,7 @@ async def approve_or_reject_leave(
         )
     
     if not leave:
-        raise ResourceNotFoundError("Leave", Leave_id)
+        raise ResourceNotFoundError("Leave", leave_id)
     
     return LeaveResponse.model_validate(leave)
 
@@ -331,6 +331,6 @@ async def delete_holiday(
     holiday_service = HolidayService(db)
     
     if not holiday_service.delete(holiday_id, current_user.id):
-        raise ResourceNotFoundError("Holiday", Holiday_id)
+        raise ResourceNotFoundError("Holiday", holiday_id)
     
     return MessageResponse(message="Holiday deleted successfully")

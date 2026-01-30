@@ -180,6 +180,13 @@ else:
 # Include API routers
 app.include_router(api_v1_router)
 
+# Serve uploaded files statically
+import os
+from fastapi.staticfiles import StaticFiles
+uploads_dir = settings.UPLOAD_DIR
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+
 
 # Health check endpoints
 @app.get("/", tags=["Health"])

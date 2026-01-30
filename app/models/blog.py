@@ -58,9 +58,18 @@ class Blog(BaseModel, AuditMixin):
     title = Column(String(255), nullable=False)
     slug = Column(String(255), unique=True, nullable=False, index=True)
     
+    # Banner
+    banner_image = Column(String(500), nullable=True)
+    banner_image_alt = Column(String(255), nullable=True)
+    banner_title = Column(String(255), nullable=True)
+    
     # Content
     excerpt = Column(Text, nullable=True)
     content = Column(Text, nullable=True)
+    
+    # Dynamic Sections (JSON array)
+    # Each section: {"heading": "...", "content": "...(HTML)", "image": "...(optional URL)"}
+    sections = Column(JSON, nullable=True)
     
     # Author
     author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -68,8 +77,13 @@ class Blog(BaseModel, AuditMixin):
     # Category
     category_id = Column(Integer, ForeignKey("blog_categories.id"), nullable=True)
     
-    # Featured image
+    # Featured image (keep for backward compatibility)
     featured_image = Column(String(500), nullable=True)
+    featured_image_alt = Column(String(255), nullable=True)
+    
+    # Blog date and read time
+    blog_date = Column(DateTime, nullable=True, default=datetime.utcnow)
+    read_time = Column(Integer, nullable=True)  # in minutes
     
     # Status
     status = Column(String(20), default="draft")  # draft, published, archived
@@ -169,6 +183,7 @@ class CaseStudy(BaseModel, AuditMixin):
     
     # Media
     featured_image = Column(String(500), nullable=True)
+    featured_image_alt = Column(String(255), nullable=True)
     gallery = Column(JSON, nullable=True)  # Array of image URLs
     
     # Metrics

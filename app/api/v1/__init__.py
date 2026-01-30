@@ -14,6 +14,7 @@ from .roles import router as roles_router
 from .permissions import router as permissions_router
 from .user_management import router as user_management_router
 from .public import router as public_router
+from .leads import router as leads_router
 
 router = APIRouter()
 

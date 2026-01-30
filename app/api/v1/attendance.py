@@ -302,7 +302,7 @@ async def get_attendance(
     attendance = att_service.get_by_id(attendance_id)
     
     if not attendance:
-        raise ResourceNotFoundError("Attendance", Attendance_id)
+        raise ResourceNotFoundError("Attendance", attendance_id)
     
     return AttendanceResponse.model_validate(attendance)
 
@@ -340,6 +340,6 @@ async def approve_attendance(
     )
     
     if not attendance:
-        raise ResourceNotFoundError("Attendance", Attendance_id)
+        raise ResourceNotFoundError("Attendance", attendance_id)
     
     return AttendanceResponse.model_validate(attendance)

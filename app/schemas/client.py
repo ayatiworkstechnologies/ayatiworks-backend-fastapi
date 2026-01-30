@@ -20,6 +20,15 @@ class ClientBase(BaseSchema):
     phone: Optional[str] = None
 
 
+class ClientContactCreate(BaseSchema):
+    """Client contact creation schema."""
+    name: str = Field(..., min_length=2, max_length=100)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    designation: Optional[str] = None
+    is_primary: bool = False
+
+
 class ClientCreate(ClientBase):
     """Client create schema."""
     
@@ -36,7 +45,9 @@ class ClientCreate(ClientBase):
     tax_id: Optional[str] = None
     manager_id: Optional[int] = None
     source: Optional[str] = None
+    source: Optional[str] = None
     tags: Optional[List[str]] = None
+    contacts: Optional[List[ClientContactCreate]] = None
     
     @field_validator('manager_id', mode='before')
     @classmethod
@@ -118,6 +129,7 @@ class LeadCreate(BaseSchema):
     designation: Optional[str] = None
     source_id: Optional[int] = None
     campaign: Optional[str] = None
+    source_details: Optional[str] = None
     interest: Optional[str] = None
     budget: Optional[float] = None
 

@@ -166,7 +166,7 @@ async def get_employee(
     employee = service.get_by_id(employee_id)
     
     if not employee:
-        raise ResourceNotFoundError("Employee", Employee_id)
+        raise ResourceNotFoundError("Employee", employee_id)
     
     return build_employee_response(employee)
 
@@ -183,7 +183,7 @@ async def get_employee_by_code(
     employee = service.get_by_code(code.upper())
     
     if not employee:
-        raise ResourceNotFoundError("Employee", Employee_id)
+        raise ResourceNotFoundError("Employee", code)
     
     return build_employee_response(employee)
 
@@ -257,7 +257,7 @@ async def update_employee(
     employee = service.update(employee_id, data, updated_by=current_user.id)
     
     if not employee:
-        raise ResourceNotFoundError("Employee", Employee_id)
+        raise ResourceNotFoundError("Employee", employee_id)
     
     return build_employee_response(employee)
 
@@ -272,7 +272,7 @@ async def delete_employee(
     service = EmployeeService(db)
     
     if not service.delete(employee_id, deleted_by=current_user.id):
-        raise ResourceNotFoundError("Employee", Employee_id)
+        raise ResourceNotFoundError("Employee", employee_id)
     
     return MessageResponse(message="Employee deleted successfully")
 
@@ -318,7 +318,7 @@ async def get_employee_documents(
     # Check if user can view this employee's documents
     employee = service.get_by_id(employee_id)
     if not employee:
-        raise ResourceNotFoundError("Employee", Employee_id)
+        raise ResourceNotFoundError("Employee", employee_id)
     
     documents = service.get_documents(employee_id)
     
@@ -338,6 +338,6 @@ async def verify_document(
     document = service.verify_document(document_id, verified_by=current_user.id)
     
     if not document:
-        raise ResourceNotFoundError("Document", Document_id)
+        raise ResourceNotFoundError("Document", document_id)
     
     return EmployeeDocumentResponse.model_validate(document)

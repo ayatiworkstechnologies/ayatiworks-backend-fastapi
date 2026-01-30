@@ -25,7 +25,10 @@ from app.api.v1 import (
     permissions,
     roles,
     dashboard,
-    public
+    public,
+    leads,
+    meta,
+    uploads
 )
 
 # Create main v1 router
@@ -55,9 +58,12 @@ router.include_router(projects.router)
 # ============== CRM & Business ==============
 router.include_router(clients.router)
 router.include_router(invoices.router)
+router.include_router(leads.router, prefix="/leads")
+router.include_router(meta.router)
 
 # ============== Content & CMS ==============
 router.include_router(blogs.router)
+router.include_router(uploads.router)
 
 # ============== Communication ==============
 router.include_router(notifications.router)
@@ -72,3 +78,4 @@ router.include_router(settings.router)
 # ============== Access Control ==============
 router.include_router(permissions.router, prefix="/permissions", tags=["permissions"])
 router.include_router(roles.router, prefix="/roles", tags=["roles"])
+

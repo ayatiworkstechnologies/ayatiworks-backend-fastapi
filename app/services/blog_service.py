@@ -49,10 +49,25 @@ class BlogService:
         return blogs, total
 
     def get_blog_by_id(self, blog_id: int) -> Optional[Blog]:
-        return self.db.query(Blog).filter(Blog.id == blog_id, Blog.is_deleted == False).first()
+        # Use simple get to avoid potential joinedload issues with bad data
+        blog = self.db.get(Blog, blog_id)
+        if blog and not blog.is_deleted:
+            return blog
+        return None
 
     def get_blog_by_slug(self, slug: str, only_published: bool = True) -> Optional[Blog]:
         query = self.db.query(Blog).filter(Blog.slug == slug, Blog.is_deleted == False)
+        if only_published:
+            query = query.filter(Blog.status == "published")
+        return query.first()
+
+    def get_blog_by_slug_and_category(self, slug: str, category_id: int, only_published: bool = True) -> Optional[Blog]:
+        """Get blog by slug within a specific category."""
+        query = self.db.query(Blog).filter(
+            Blog.slug == slug,
+            Blog.category_id == category_id,
+            Blog.is_deleted == False
+        )
         if only_published:
             query = query.filter(Blog.status == "published")
         return query.first()
@@ -119,6 +134,13 @@ class BlogCategoryService:
 
     def get_by_id(self, category_id: int) -> Optional[BlogCategory]:
         return self.db.query(BlogCategory).filter(BlogCategory.id == category_id, BlogCategory.is_deleted == False).first()
+
+    def get_category_by_slug(self, slug: str) -> Optional[BlogCategory]:
+        """Get category by slug."""
+        return self.db.query(BlogCategory).filter(
+            BlogCategory.slug == slug,
+            BlogCategory.is_deleted == False
+        ).first()
 
     def create(self, data: BlogCategoryCreate, created_by: int) -> BlogCategory:
         category = BlogCategory(
