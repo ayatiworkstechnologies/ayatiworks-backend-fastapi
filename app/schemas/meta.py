@@ -2,9 +2,8 @@
 Meta Ads API Schemas.
 """
 
-from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from typing import Any
 
 from app.schemas.common import BaseSchema, TimestampSchema
 
@@ -13,24 +12,24 @@ from app.schemas.common import BaseSchema, TimestampSchema
 class MetaCredentialBase(BaseSchema):
     ad_account_id: str
     access_token: str
-    app_id: Optional[str] = None
-    app_secret: Optional[str] = None
-    is_active: Optional[bool] = True
+    app_id: str | None = None
+    app_secret: str | None = None
+    is_active: bool | None = True
 
 class MetaCredentialCreate(MetaCredentialBase):
     pass
 
 class MetaCredentialUpdate(BaseSchema):
-    ad_account_id: Optional[str] = None
-    access_token: Optional[str] = None
-    app_id: Optional[str] = None
-    app_secret: Optional[str] = None
-    is_active: Optional[bool] = None
+    ad_account_id: str | None = None
+    access_token: str | None = None
+    app_id: str | None = None
+    app_secret: str | None = None
+    is_active: bool | None = None
 
 class MetaCredentialResponse(MetaCredentialBase, TimestampSchema):
     id: int
     client_id: int
-    last_synced_at: Optional[datetime] = None
+    last_synced_at: datetime | None = None
 
 
 # ============ Campaigns ============
@@ -38,21 +37,21 @@ class MetaCredentialResponse(MetaCredentialBase, TimestampSchema):
 class MetaCampaignBase(BaseSchema):
     campaign_id: str
     name: str
-    status: Optional[str] = None
-    objective: Optional[str] = None
-    daily_budget: Optional[float] = None
-    lifetime_budget: Optional[float] = None
-    spend: Optional[float] = None
-    start_time: Optional[datetime] = None
-    stop_time: Optional[datetime] = None
+    status: str | None = None
+    objective: str | None = None
+    daily_budget: float | None = None
+    lifetime_budget: float | None = None
+    spend: float | None = None
+    start_time: datetime | None = None
+    stop_time: datetime | None = None
 
 class MetaCampaignCreate(MetaCampaignBase):
     pass
 
 class MetaCampaignUpdate(BaseSchema):
-    name: Optional[str] = None
-    status: Optional[str] = None
-    spend: Optional[float] = None
+    name: str | None = None
+    status: str | None = None
+    spend: float | None = None
 
 class MetaCampaignResponse(MetaCampaignBase, TimestampSchema):
     id: int
@@ -64,23 +63,24 @@ class MetaCampaignResponse(MetaCampaignBase, TimestampSchema):
 
 class MetaLeadBase(BaseSchema):
     lead_id: str
-    form_id: Optional[str] = None
-    created_time: Optional[datetime] = None
-    full_name: Optional[str] = None
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
-    raw_data: Optional[Dict[str, Any]] = None
-    status: Optional[str] = "new"
+    form_id: str | None = None
+    created_time: datetime | None = None
+    full_name: str | None = None
+    email: str | None = None
+    phone_number: str | None = None
+    raw_data: dict[str, Any] | None = None
+    status: str | None = "new"
 
 class MetaLeadCreate(MetaLeadBase):
-    campaign_meta_id: Optional[str] = None # To link by string ID during sync
+    campaign_meta_id: str | None = None # To link by string ID during sync
 
 class MetaLeadUpdate(BaseSchema):
-    status: Optional[str] = None
-    notes: Optional[str] = None
+    status: str | None = None
+    notes: str | None = None
 
 class MetaLeadResponse(MetaLeadBase, TimestampSchema):
     id: int
     client_id: int
-    campaign_id: Optional[int] = None
-    campaign_name: Optional[str] = None
+    campaign_id: int | None = None
+    campaign_name: str | None = None
+

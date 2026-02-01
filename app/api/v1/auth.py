@@ -3,30 +3,33 @@ Authentication API routes.
 Login, logout, refresh token, 2FA.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.api.deps import get_current_user, get_current_active_user
-from app.models.auth import User
-from app.services.auth_service import AuthService
-from app.schemas.auth import (
-    LoginRequest, LoginResponse, Token,
-    RefreshTokenRequest, OTPRequest,
-    ChangePasswordRequest, Enable2FARequest, Verify2FARequest,
-    UserResponse, RoleListResponse
-)
+from app.api.deps import get_current_active_user, get_current_user
 from app.core.exceptions import (
+    AuthenticationError,
     InvalidCredentialsError,
     PermissionDeniedError,
-    InvalidTokenError,
+    ResourceNotFoundError,
     TokenExpiredError,
-    AuthenticationError,
-    ValidationError,
-    ResourceNotFoundError
 )
+from app.database import get_db
+from app.models.auth import User
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    Enable2FARequest,
+    LoginRequest,
+    LoginResponse,
+    OTPRequest,
+    RefreshTokenRequest,
+    RoleListResponse,
+    Token,
+    UserResponse,
+)
+from app.services.auth_service import AuthService
 
 # Rate limiter for auth endpoints
 limiter = Limiter(key_func=get_remote_address)
@@ -46,29 +49,29 @@ async def login(
     Returns access token and user info.
     """
     auth_service = AuthService(db)
-    
+
     user = auth_service.authenticate_user(data.email, data.password)
-    
+
     if not user:
         raise InvalidCredentialsError()
-    
+
     if not user.is_active:
         raise PermissionDeniedError("Account is disabled")
-    
+
     # Check if 2FA is enabled
     if user.is_2fa_enabled:
         # Generate and send OTP
-        otp = auth_service.generate_and_save_otp(user, purpose="login")
+        _otp = auth_service.generate_and_save_otp(user, purpose="login")
         # TODO: Send OTP via email
         raise AuthenticationError(
             message="2FA required. OTP sent to email.",
             status_code=status.HTTP_202_ACCEPTED,
             error_code="2FA_REQUIRED"
         )
-    
+
     # Create tokens
     access_token, refresh_token, expires_in = auth_service.create_tokens(user)
-    
+
     # Create session
     auth_service.create_session(
         user=user,
@@ -77,10 +80,10 @@ async def login(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )
-    
+
     # Get permissions
     permissions = auth_service.get_user_permissions(user)
-    
+
     # Build role response
     role_response = None
     if user.role:
@@ -94,7 +97,7 @@ async def login(
             is_system=user.role.is_system,
             permission_count=len(user.role.permissions)
         )
-    
+
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -132,21 +135,21 @@ async def login_2fa(
     Complete login with 2FA OTP verification.
     """
     auth_service = AuthService(db)
-    
+
     user = db.query(User).filter(
         User.email == data.email,
         User.is_deleted == False
     ).first()
-    
+
     if not user:
         raise ResourceNotFoundError("User", data.email)
-    
+
     if not auth_service.verify_otp(user.id, data.otp, purpose="login"):
         raise InvalidCredentialsError("Invalid or expired OTP")
-    
+
     # Create tokens
     access_token, refresh_token, expires_in = auth_service.create_tokens(user)
-    
+
     # Create session
     auth_service.create_session(
         user=user,
@@ -155,12 +158,12 @@ async def login_2fa(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent")
     )
-    
+
     permissions = auth_service.get_user_permissions(user)
-    
+
     user_response = UserResponse.model_validate(user)
     user_response.permissions = permissions
-    
+
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -179,14 +182,14 @@ async def logout(
 ):
     """Logout and invalidate current session."""
     auth_service = AuthService(db)
-    
+
     # Get token from header
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.replace("Bearer ", "") if auth_header else None
-    
+
     if token:
         auth_service.invalidate_session(token)
-    
+
     return {"message": "Logged out successfully"}
 
 
@@ -197,14 +200,14 @@ async def refresh_token(
 ):
     """Refresh access token using refresh token."""
     auth_service = AuthService(db)
-    
+
     result = auth_service.refresh_access_token(data.refresh_token)
-    
+
     if not result:
         raise TokenExpiredError()
-    
+
     new_access_token, expires_in = result
-    
+
     return Token(
         access_token=new_access_token,
         token_type="bearer",
@@ -221,11 +224,11 @@ async def get_me(
     # Get permissions
     auth_service = AuthService(db)
     permissions = auth_service.get_user_permissions(current_user)
-    
+
     # Construct response with permissions
     response = UserResponse.model_validate(current_user)
     response.permissions = permissions
-    
+
     return response
 
 
@@ -237,16 +240,16 @@ async def change_password(
 ):
     """Change current user's password."""
     from app.core.security import verify_password
-    
+
     if not verify_password(data.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect"
         )
-    
+
     auth_service = AuthService(db)
     auth_service.change_password(current_user, data.new_password)
-    
+
     return {"message": "Password changed successfully"}
 
 
@@ -258,16 +261,16 @@ async def enable_2fa(
 ):
     """Enable 2FA for current user."""
     from app.core.security import verify_password
-    
+
     if not verify_password(data.password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password is incorrect"
         )
-    
+
     current_user.is_2fa_enabled = True
     db.commit()
-    
+
     return {"message": "2FA enabled successfully"}
 
 
@@ -279,15 +282,16 @@ async def disable_2fa(
 ):
     """Disable 2FA for current user."""
     from app.core.security import verify_password
-    
+
     if not verify_password(data.password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password is incorrect"
         )
-    
+
     current_user.is_2fa_enabled = False
     current_user.two_fa_secret = None
     db.commit()
-    
+
     return {"message": "2FA disabled successfully"}
+

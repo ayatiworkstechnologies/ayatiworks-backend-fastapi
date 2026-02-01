@@ -3,32 +3,30 @@ Leave and Holiday API routes.
 """
 
 from datetime import date
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import PermissionChecker, get_current_active_user
+from app.core.exceptions import ResourceNotFoundError
 from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker
 from app.models.auth import User
-from app.services.leave_service import LeaveService, HolidayService
-from app.services.employee_service import EmployeeService
+from app.models.leave import LeaveType
+from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.leave import (
-    LeaveCreate, LeaveUpdate, LeaveResponse, LeaveListResponse,
-    LeaveApprovalRequest, LeaveCancelRequest, LeaveBalanceResponse,
-    LeaveTypeCreate, LeaveTypeUpdate, LeaveTypeResponse,
-    HolidayCreate, HolidayUpdate, HolidayResponse
+    HolidayCreate,
+    HolidayResponse,
+    LeaveApprovalRequest,
+    LeaveBalanceResponse,
+    LeaveCancelRequest,
+    LeaveCreate,
+    LeaveListResponse,
+    LeaveResponse,
+    LeaveTypeCreate,
+    LeaveTypeResponse,
 )
-from app.schemas.common import PaginatedResponse, MessageResponse
-from app.models.leave import LeaveType, Holiday
-from app.core.exceptions import (
-    ResourceNotFoundError,
-    ResourceAlreadyExistsError,
-    InvalidCredentialsError,
-    PermissionDeniedError,
-    ValidationError,
-    BusinessLogicError
-)
-
+from app.services.employee_service import EmployeeService
+from app.services.leave_service import HolidayService, LeaveService
 
 router = APIRouter(tags=["Leave & Holidays"])
 
@@ -44,19 +42,19 @@ async def get_my_leave_balance(
     """Get current user's leave balance."""
     if year is None:
         year = date.today().year
-    
+
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee profile not found"
         )
-    
+
     leave_service = LeaveService(db)
     balances = leave_service.get_all_balances(employee.id, year)
-    
+
     return balances
 
 
@@ -71,15 +69,15 @@ async def apply_leave(
     """Apply for leave."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee profile not found"
         )
-    
+
     leave_service = LeaveService(db)
-    
+
     try:
         leave = leave_service.apply_leave(employee.id, data, created_by=current_user.id)
     except ValueError as e:
@@ -87,14 +85,14 @@ async def apply_leave(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
+
     return LeaveResponse.model_validate(leave)
 
 
 @router.get("/leaves/my-leaves", response_model=PaginatedResponse[LeaveListResponse])
 async def get_my_leaves(
-    year: Optional[int] = None,
-    status: Optional[str] = None,
+    year: int | None = None,
+    status: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_active_user),
@@ -103,13 +101,13 @@ async def get_my_leaves(
     """Get current user's leave history."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee profile not found"
         )
-    
+
     leave_service = LeaveService(db)
     leaves, total = leave_service.get_employee_leaves(
         employee_id=employee.id,
@@ -118,7 +116,7 @@ async def get_my_leaves(
         page=page,
         page_size=page_size
     )
-    
+
     items = []
     for leave in leaves:
         items.append(LeaveListResponse(
@@ -132,7 +130,7 @@ async def get_my_leaves(
             days=leave.days,
             status=leave.status
         ))
-    
+
     return PaginatedResponse.create(items, total, page, page_size)
 
 
@@ -145,7 +143,7 @@ async def cancel_leave(
 ):
     """Cancel a leave request."""
     leave_service = LeaveService(db)
-    
+
     try:
         leave = leave_service.cancel_leave(leave_id, current_user.id, data.reason)
     except ValueError as e:
@@ -153,10 +151,10 @@ async def cancel_leave(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
+
     if not leave:
         raise ResourceNotFoundError("Leave", leave_id)
-    
+
     return LeaveResponse.model_validate(leave)
 
 
@@ -170,13 +168,13 @@ async def get_pending_approvals(
     """Get pending leave requests for approval."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         return []
-    
+
     leave_service = LeaveService(db)
     leaves = leave_service.get_pending_approvals(employee.id)
-    
+
     items = []
     for leave in leaves:
         items.append(LeaveListResponse(
@@ -190,7 +188,7 @@ async def get_pending_approvals(
             days=leave.days,
             status=leave.status
         ))
-    
+
     return items
 
 
@@ -203,7 +201,7 @@ async def approve_or_reject_leave(
 ):
     """Approve or reject a leave request."""
     leave_service = LeaveService(db)
-    
+
     try:
         leave = leave_service.approve_leave(leave_id, current_user.id, data)
     except ValueError as e:
@@ -211,10 +209,10 @@ async def approve_or_reject_leave(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
+
     if not leave:
         raise ResourceNotFoundError("Leave", leave_id)
-    
+
     return LeaveResponse.model_validate(leave)
 
 
@@ -222,7 +220,7 @@ async def approve_or_reject_leave(
 
 @router.get("/leave-types", response_model=list[LeaveTypeResponse])
 async def list_leave_types(
-    company_id: Optional[int] = None,
+    company_id: int | None = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -231,12 +229,12 @@ async def list_leave_types(
         LeaveType.is_deleted == False,
         LeaveType.is_active == True
     )
-    
+
     if company_id:
         query = query.filter(
-            (LeaveType.company_id == company_id) | (LeaveType.company_id == None)
+            (LeaveType.company_id == company_id) | (LeaveType.company_id is None)
         )
-    
+
     leave_types = query.all()
     return [LeaveTypeResponse.model_validate(lt) for lt in leave_types]
 
@@ -252,11 +250,11 @@ async def create_leave_type(
         **data.model_dump(),
         created_by=current_user.id
     )
-    
+
     db.add(leave_type)
     db.commit()
     db.refresh(leave_type)
-    
+
     return LeaveTypeResponse.model_validate(leave_type)
 
 
@@ -264,8 +262,8 @@ async def create_leave_type(
 
 @router.get("/holidays", response_model=PaginatedResponse[HolidayResponse])
 async def list_holidays(
-    company_id: Optional[int] = None,
-    year: Optional[int] = None,
+    company_id: int | None = None,
+    year: int | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     current_user: User = Depends(get_current_active_user),
@@ -273,24 +271,24 @@ async def list_holidays(
 ):
     """List all holidays."""
     holiday_service = HolidayService(db)
-    
+
     if year is None:
         year = date.today().year
-    
+
     holidays, total = holiday_service.get_all(
         company_id=company_id,
         year=year,
         page=page,
         page_size=page_size
     )
-    
+
     items = [HolidayResponse.model_validate(h) for h in holidays]
     return PaginatedResponse.create(items, total, page, page_size)
 
 
 @router.get("/holidays/upcoming", response_model=list[HolidayResponse])
 async def get_upcoming_holidays(
-    company_id: Optional[int] = None,
+    company_id: int | None = None,
     limit: int = Query(5, ge=1, le=20),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -309,7 +307,7 @@ async def create_holiday(
 ):
     """Create a new holiday."""
     holiday_service = HolidayService(db)
-    
+
     holiday = holiday_service.create(
         company_id=data.company_id,
         name=data.name,
@@ -317,7 +315,7 @@ async def create_holiday(
         holiday_type=data.holiday_type,
         created_by=current_user.id
     )
-    
+
     return HolidayResponse.model_validate(holiday)
 
 
@@ -329,8 +327,9 @@ async def delete_holiday(
 ):
     """Delete a holiday."""
     holiday_service = HolidayService(db)
-    
+
     if not holiday_service.delete(holiday_id, current_user.id):
         raise ResourceNotFoundError("Holiday", holiday_id)
-    
+
     return MessageResponse(message="Holiday deleted successfully")
+

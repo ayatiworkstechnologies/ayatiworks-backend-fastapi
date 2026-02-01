@@ -5,29 +5,26 @@ Check-in, check-out, and attendance management.
 
 from datetime import date
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import PermissionChecker, get_current_active_user
+from app.core.exceptions import BusinessLogicError, ResourceNotFoundError
 from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker, FeatureChecker
 from app.models.auth import User
+from app.schemas.attendance import (
+    AttendanceCreate,
+    AttendanceListResponse,
+    AttendanceResponse,
+    AttendanceStatsResponse,
+    AttendanceSummary,
+    CheckInRequest,
+    CheckOutRequest,
+)
+from app.schemas.common import PaginatedResponse
 from app.services.attendance_service import AttendanceService
 from app.services.employee_service import EmployeeService
-from app.schemas.attendance import (
-    CheckInRequest, CheckOutRequest, AttendanceCreate, AttendanceUpdate,
-    AttendanceResponse, AttendanceListResponse, AttendanceSummary,
-    AttendanceStatsResponse
-)
-from app.schemas.common import PaginatedResponse, MessageResponse
-from app.core.exceptions import (
-    ResourceNotFoundError,
-    ResourceAlreadyExistsError,
-    InvalidCredentialsError,
-    PermissionDeniedError,
-    ValidationError,
-    BusinessLogicError
-)
-
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
@@ -46,12 +43,12 @@ async def check_in(
     # Get employee for current user
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise ResourceNotFoundError("Employee profile", current_user.id)
-    
+
     att_service = AttendanceService(db)
-    
+
     try:
         attendance = att_service.check_in(
             employee_id=employee.id,
@@ -61,7 +58,7 @@ async def check_in(
         )
     except ValueError as e:
         raise BusinessLogicError(str(e))
-    
+
     return AttendanceResponse(
         id=attendance.id,
         employee_id=attendance.employee_id,
@@ -100,15 +97,15 @@ async def check_out(
     """Mark check-out for current user."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee profile not found"
         )
-    
+
     att_service = AttendanceService(db)
-    
+
     try:
         attendance = att_service.check_out(
             employee_id=employee.id,
@@ -121,7 +118,7 @@ async def check_out(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
+
     return AttendanceResponse.model_validate(attendance)
 
 
@@ -133,19 +130,19 @@ async def get_today_attendance(
     """Get today's attendance for current user."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee profile not found"
         )
-    
+
     att_service = AttendanceService(db)
     attendance = att_service.get_today_attendance(employee.id)
-    
+
     if not attendance:
         return None
-    
+
     return AttendanceResponse.model_validate(attendance)
 
 
@@ -159,16 +156,16 @@ async def get_my_attendance_history(
     """Get attendance history for current user."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee profile not found"
         )
-    
+
     att_service = AttendanceService(db)
     attendances = att_service.get_employee_attendance(employee.id, from_date, to_date)
-    
+
     return [AttendanceResponse.model_validate(a) for a in attendances]
 
 
@@ -182,13 +179,13 @@ async def get_my_summary(
     """Get attendance summary for current user."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee profile not found"
         )
-    
+
     att_service = AttendanceService(db)
     return att_service.get_summary(employee.id, from_date, to_date)
 
@@ -198,10 +195,10 @@ async def get_my_summary(
 async def list_attendance(
     from_date: date = Query(...),
     to_date: date = Query(...),
-    company_id: Optional[int] = None,
-    branch_id: Optional[int] = None,
-    department_id: Optional[int] = None,
-    status: Optional[str] = None,
+    company_id: int | None = None,
+    branch_id: int | None = None,
+    department_id: int | None = None,
+    status: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(PermissionChecker("attendance.view_all")),
@@ -209,7 +206,7 @@ async def list_attendance(
 ):
     """List all attendance records (admin)."""
     att_service = AttendanceService(db)
-    
+
     attendances, total = att_service.get_all_attendance(
         from_date=from_date,
         to_date=to_date,
@@ -220,7 +217,7 @@ async def list_attendance(
         page=page,
         page_size=page_size
     )
-    
+
     items = []
     for att in attendances:
         items.append(AttendanceListResponse(
@@ -236,7 +233,7 @@ async def list_attendance(
             working_hours=att.working_hours,
             is_late=att.is_late
         ))
-    
+
     return PaginatedResponse.create(items, total, page, page_size)
 
 
@@ -244,9 +241,9 @@ async def list_attendance(
 async def get_attendance_stats(
     from_date: date = Query(...),
     to_date: date = Query(...),
-    company_id: Optional[int] = None,
-    branch_id: Optional[int] = None,
-    department_id: Optional[int] = None,
+    company_id: int | None = None,
+    branch_id: int | None = None,
+    department_id: int | None = None,
     current_user: User = Depends(PermissionChecker("attendance.view_all")),
     db: Session = Depends(get_db)
 ):
@@ -298,12 +295,12 @@ async def get_attendance(
 ):
     """Get attendance by ID."""
     att_service = AttendanceService(db)
-    
+
     attendance = att_service.get_by_id(attendance_id)
-    
+
     if not attendance:
         raise ResourceNotFoundError("Attendance", attendance_id)
-    
+
     return AttendanceResponse.model_validate(attendance)
 
 
@@ -315,9 +312,9 @@ async def create_manual_attendance(
 ):
     """Create attendance record manually (admin)."""
     att_service = AttendanceService(db)
-    
+
     attendance = att_service.create_manual(data, created_by=current_user.id)
-    
+
     return AttendanceResponse.model_validate(attendance)
 
 
@@ -325,21 +322,22 @@ async def create_manual_attendance(
 async def approve_attendance(
     attendance_id: int,
     status: str = Query(..., regex="^(approved|rejected)$"),
-    notes: Optional[str] = None,
+    notes: str | None = None,
     current_user: User = Depends(PermissionChecker("attendance.approve")),
     db: Session = Depends(get_db)
 ):
     """Approve or reject attendance."""
     att_service = AttendanceService(db)
-    
+
     attendance = att_service.approve(
         attendance_id=attendance_id,
         approved_by=current_user.id,
         status=status,
         notes=notes
     )
-    
+
     if not attendance:
         raise ResourceNotFoundError("Attendance", attendance_id)
-    
+
     return AttendanceResponse.model_validate(attendance)
+

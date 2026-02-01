@@ -2,38 +2,37 @@
 Company and Branch schemas.
 """
 
-from typing import Optional, List
-from pydantic import BaseModel, Field, EmailStr
+
+from pydantic import EmailStr, Field
 
 from app.schemas.common import BaseSchema, TimestampSchema
-
 
 # ============== Company Schemas ==============
 
 class CompanyBase(BaseSchema):
     """Company base schema."""
-    
+
     name: str = Field(..., min_length=2, max_length=255)
     code: str = Field(..., min_length=2, max_length=50)
-    logo: Optional[str] = None
-    
+    logo: str | None = None
+
     # Contact
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    
+    email: EmailStr | None = None
+    phone: str | None = None
+    website: str | None = None
+
     # Address
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    postal_code: Optional[str] = None
-    
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
+
     # Legal
-    registration_number: Optional[str] = None
-    tax_id: Optional[str] = None
-    
+    registration_number: str | None = None
+    tax_id: str | None = None
+
     # Settings
     timezone: str = "UTC"
     currency: str = "USD"
@@ -47,42 +46,42 @@ class CompanyCreate(CompanyBase):
 
 class CompanyUpdate(BaseSchema):
     """Company update schema."""
-    
-    name: Optional[str] = None
-    logo: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    postal_code: Optional[str] = None
-    registration_number: Optional[str] = None
-    tax_id: Optional[str] = None
-    timezone: Optional[str] = None
-    currency: Optional[str] = None
-    is_active: Optional[bool] = None
+
+    name: str | None = None
+    logo: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    website: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
+    registration_number: str | None = None
+    tax_id: str | None = None
+    timezone: str | None = None
+    currency: str | None = None
+    is_active: bool | None = None
 
 
 class CompanyResponse(CompanyBase, TimestampSchema):
     """Company response schema."""
-    
+
     id: int
     is_active: bool
-    subscription_plan: Optional[str] = None
+    subscription_plan: str | None = None
     branch_count: int = 0
     employee_count: int = 0
 
 
 class CompanyListResponse(BaseSchema):
     """Minimal company info for lists."""
-    
+
     id: int
     name: str
     code: str
-    logo: Optional[str] = None
+    logo: str | None = None
     is_active: bool
 
 
@@ -90,77 +89,78 @@ class CompanyListResponse(BaseSchema):
 
 class BranchBase(BaseSchema):
     """Branch base schema."""
-    
+
     name: str = Field(..., min_length=2, max_length=255)
     code: str = Field(..., min_length=2, max_length=50)
-    
+
     # Contact
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    
+    email: EmailStr | None = None
+    phone: str | None = None
+
     # Address
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    postal_code: Optional[str] = None
-    
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
+
     # Location
-    latitude: Optional[str] = None
-    longitude: Optional[str] = None
+    latitude: str | None = None
+    longitude: str | None = None
     geo_fence_radius: int = 100
 
 
 class BranchCreate(BranchBase):
     """Branch create schema."""
-    
+
     company_id: int
-    manager_id: Optional[int] = None
-    timezone: Optional[str] = None
+    manager_id: int | None = None
+    timezone: str | None = None
 
 
 class BranchUpdate(BaseSchema):
     """Branch update schema."""
-    
-    name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    postal_code: Optional[str] = None
-    latitude: Optional[str] = None
-    longitude: Optional[str] = None
-    geo_fence_radius: Optional[int] = None
-    manager_id: Optional[int] = None
-    timezone: Optional[str] = None
-    is_active: Optional[bool] = None
+
+    name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
+    latitude: str | None = None
+    longitude: str | None = None
+    geo_fence_radius: int | None = None
+    manager_id: int | None = None
+    timezone: str | None = None
+    is_active: bool | None = None
 
 
 class BranchResponse(BranchBase, TimestampSchema):
     """Branch response schema."""
-    
+
     id: int
     company_id: int
-    manager_id: Optional[int] = None
-    timezone: Optional[str] = None
+    manager_id: int | None = None
+    timezone: str | None = None
     is_active: bool
-    
+
     # Display
-    company_name: Optional[str] = None
-    manager_name: Optional[str] = None
+    company_name: str | None = None
+    manager_name: str | None = None
     employee_count: int = 0
 
 
 class BranchListResponse(BaseSchema):
     """Minimal branch info for lists."""
-    
+
     id: int
     company_id: int
     name: str
     code: str
-    city: Optional[str] = None
+    city: str | None = None
     is_active: bool
+

@@ -8,6 +8,9 @@ from app.models.employee import Employee, EmploymentStatus, EmploymentType
 from app.models.organization import Department, Designation
 from app.models.leave import LeaveType
 from app.models.attendance import Shift
+from app.models.team import Team
+from app.models.project import Project, Task
+from app.models.client import Client
 from app.core.permissions import get_all_permissions, PermissionCode
 from app.core.security import hash_password
 from app.config import settings

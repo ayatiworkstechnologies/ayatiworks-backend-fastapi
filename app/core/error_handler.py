@@ -3,18 +3,16 @@ Error handling middleware and exception handlers.
 Converts custom exceptions to structured JSON responses.
 """
 
-import traceback
 import logging
+import traceback
 from datetime import datetime
-from typing import Union
+
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError as SQLAlchemyIntegrityError, OperationalError
 
 from app.core.exceptions import (
     AppException,
-    DatabaseError,
-    IntegrityError,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,20 +27,20 @@ def create_error_response(
 ) -> JSONResponse:
     """
     Create standardized error response.
-    
+
     Args:
         request: FastAPI request object
         error_message: Human-readable error message
         status_code: HTTP status code
         error_code: Machine-readable error code
         details: Additional error context
-    
+
     Returns:
         JSONResponse with standardized error format
     """
     # Get request ID if available
     request_id = getattr(request.state, 'request_id', 'unknown')
-    
+
     error_response = {
         "error": error_message,
         "error_code": error_code,
@@ -52,7 +50,7 @@ def create_error_response(
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "path": str(request.url.path)
     }
-    
+
     return JSONResponse(
         status_code=status_code,
         content=error_response
@@ -62,7 +60,7 @@ def create_error_response(
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
     """
     Handle custom application exceptions.
-    
+
     Converts AppException and its subclasses to structured JSON responses.
     """
     # Log the error
@@ -76,7 +74,7 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
             "details": exc.details
         }
     )
-    
+
     return create_error_response(
         request=request,
         error_message=exc.message,
@@ -88,11 +86,11 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
 
 async def database_exception_handler(
     request: Request,
-    exc: Union[SQLAlchemyIntegrityError, OperationalError]
+    exc: SQLAlchemyIntegrityError | OperationalError
 ) -> JSONResponse:
     """
     Handle database exceptions.
-    
+
     Converts SQLAlchemy exceptions to user-friendly responses.
     """
     logger.error(
@@ -104,10 +102,10 @@ async def database_exception_handler(
         },
         exc_info=True
     )
-    
+
     # Check for common integrity errors
     error_str = str(exc).lower()
-    
+
     if "unique constraint" in error_str or "duplicate" in error_str:
         # Extract field name if possible
         field = "field"
@@ -115,7 +113,7 @@ async def database_exception_handler(
             field = "email"
         elif "code" in error_str:
             field = "code"
-        
+
         return create_error_response(
             request=request,
             error_message=f"A record with this {field} already exists",
@@ -123,7 +121,7 @@ async def database_exception_handler(
             error_code="DUPLICATE_ENTRY",
             details={"field": field}
         )
-    
+
     elif "foreign key constraint" in error_str:
         return create_error_response(
             request=request,
@@ -131,7 +129,7 @@ async def database_exception_handler(
             status_code=status.HTTP_400_BAD_REQUEST,
             error_code="FOREIGN_KEY_VIOLATION"
         )
-    
+
     # Generic database error
     return create_error_response(
         request=request,
@@ -144,7 +142,7 @@ async def database_exception_handler(
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """
     Handle unexpected exceptions.
-    
+
     Catch-all handler for exceptions that weren't caught by specific handlers.
     """
     # Log full stack trace for debugging
@@ -157,10 +155,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         },
         exc_info=True
     )
-    
+
     # In production, don't expose internal error details
     from app.config import settings
-    
+
     if settings.DEBUG:
         error_message = f"{type(exc).__name__}: {str(exc)}"
         details = {
@@ -172,7 +170,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         details = {
             "exception_type": type(exc).__name__
         }
-    
+
     return create_error_response(
         request=request,
         error_message=error_message,
@@ -185,19 +183,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 def register_exception_handlers(app):
     """
     Register all exception handlers with the FastAPI app.
-    
+
     Args:
         app: FastAPI application instance
     """
     from sqlalchemy.exc import IntegrityError as SQLAlchemyIntegrityError, OperationalError
-    
+
     # Custom application exceptions
     app.add_exception_handler(AppException, app_exception_handler)
-    
+
     # Database exceptions
     app.add_exception_handler(SQLAlchemyIntegrityError, database_exception_handler)
     app.add_exception_handler(OperationalError, database_exception_handler)
-    
+
     # Catch-all for unexpected exceptions
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
@@ -209,7 +207,7 @@ def log_error_with_context(
 ):
     """
     Log error with additional context for debugging.
-    
+
     Args:
         error: Exception instance
         context: Additional context dictionary
@@ -220,12 +218,13 @@ def log_error_with_context(
         "error_message": str(error),
         **(context or {})
     }
-    
+
     if user_id:
         log_data["user_id"] = user_id
-    
+
     logger.error(
         f"Error occurred: {type(error).__name__}",
         extra=log_data,
         exc_info=True
     )
+

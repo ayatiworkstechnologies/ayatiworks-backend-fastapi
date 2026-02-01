@@ -2,31 +2,27 @@
 Invoice and Billing API routes.
 """
 
-from typing import Optional
 from datetime import date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
+from app.api.deps import PermissionChecker
+from app.core.exceptions import ResourceNotFoundError
 from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker
 from app.models.auth import User
-from app.models.invoice import Invoice, InvoiceItem, Payment, InvoiceStatus
+from app.models.invoice import Invoice, InvoiceItem, InvoiceStatus, Payment
+from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.invoice import (
-    InvoiceCreate, InvoiceUpdate, InvoiceResponse, InvoiceListResponse,
-    PaymentCreate, PaymentResponse
+    InvoiceCreate,
+    InvoiceListResponse,
+    InvoiceResponse,
+    InvoiceUpdate,
+    PaymentCreate,
+    PaymentResponse,
 )
-from app.schemas.common import PaginatedResponse, MessageResponse
-from app.core.exceptions import (
-    ResourceNotFoundError,
-    ResourceAlreadyExistsError,
-    InvalidCredentialsError,
-    PermissionDeniedError,
-    ValidationError,
-    BusinessLogicError
-)
-
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
@@ -35,11 +31,11 @@ def generate_invoice_number(db: Session) -> str:
     """Generate next invoice number."""
     year = date.today().year
     prefix = f"INV-{year}-"
-    
+
     last = db.query(func.max(Invoice.invoice_number)).filter(
         Invoice.invoice_number.like(f"{prefix}%")
     ).scalar()
-    
+
     if last:
         try:
             num = int(last.replace(prefix, "")) + 1
@@ -47,16 +43,16 @@ def generate_invoice_number(db: Session) -> str:
             num = 1
     else:
         num = 1
-    
+
     return f"{prefix}{num:04d}"
 
 
 @router.get("", response_model=PaginatedResponse[InvoiceListResponse])
 async def list_invoices(
-    client_id: Optional[int] = None,
-    status: Optional[str] = None,
-    from_date: Optional[date] = None,
-    to_date: Optional[date] = None,
+    client_id: int | None = None,
+    status: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(PermissionChecker("invoice.view")),
@@ -64,24 +60,24 @@ async def list_invoices(
 ):
     """List all invoices."""
     query = db.query(Invoice).filter(Invoice.is_deleted == False)
-    
+
     if client_id:
         query = query.filter(Invoice.client_id == client_id)
-    
+
     if status:
         query = query.filter(Invoice.status == status)
-    
+
     if from_date:
         query = query.filter(Invoice.issue_date >= from_date)
-    
+
     if to_date:
         query = query.filter(Invoice.issue_date <= to_date)
-    
+
     total = query.count()
-    
+
     offset = (page - 1) * page_size
     invoices = query.order_by(Invoice.issue_date.desc()).offset(offset).limit(page_size).all()
-    
+
     items = []
     for inv in invoices:
         items.append(InvoiceListResponse(
@@ -94,7 +90,7 @@ async def list_invoices(
             amount_due=inv.amount_due,
             status=inv.status
         ))
-    
+
     return PaginatedResponse.create(items, total, page, page_size)
 
 
@@ -109,13 +105,13 @@ async def get_invoice(
         Invoice.id == invoice_id,
         Invoice.is_deleted == False
     ).first()
-    
+
     if not invoice:
-        raise ResourceNotFoundError("Invoice", Invoice_id)
-    
+        raise ResourceNotFoundError("Invoice", invoice_id)
+
     response = InvoiceResponse.model_validate(invoice)
     response.client_name = invoice.client.name if invoice.client else None
-    
+
     return response
 
 
@@ -127,19 +123,19 @@ async def create_invoice(
 ):
     """Create a new invoice."""
     invoice_number = generate_invoice_number(db)
-    
+
     # Calculate totals
     subtotal = Decimal(0)
     for item in data.items:
         subtotal += item.rate * Decimal(str(item.quantity))
-    
+
     discount = data.discount
     if data.discount_type == "percentage":
         discount = subtotal * (data.discount / 100)
-    
+
     tax = (subtotal - discount) * Decimal(str(data.tax_rate / 100))
     total = subtotal - discount + tax
-    
+
     invoice = Invoice(
         invoice_number=invoice_number,
         client_id=data.client_id,
@@ -159,10 +155,10 @@ async def create_invoice(
         terms=data.terms,
         created_by=current_user.id
     )
-    
+
     db.add(invoice)
     db.flush()
-    
+
     # Add invoice items
     for i, item_data in enumerate(data.items):
         item = InvoiceItem(
@@ -175,10 +171,10 @@ async def create_invoice(
             order=i
         )
         db.add(item)
-    
+
     db.commit()
     db.refresh(invoice)
-    
+
     return InvoiceResponse.model_validate(invoice)
 
 
@@ -194,26 +190,26 @@ async def update_invoice(
         Invoice.id == invoice_id,
         Invoice.is_deleted == False
     ).first()
-    
+
     if not invoice:
-        raise ResourceNotFoundError("Invoice", Invoice_id)
-    
+        raise ResourceNotFoundError("Invoice", invoice_id)
+
     # Don't allow editing paid invoices
     if invoice.status == InvoiceStatus.PAID.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot edit a paid invoice"
         )
-    
+
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         if hasattr(invoice, field) and field not in ['items']:
             setattr(invoice, field, value)
-    
+
     db.commit()
     db.refresh(invoice)
-    
+
     return InvoiceResponse.model_validate(invoice)
 
 
@@ -228,20 +224,20 @@ async def delete_invoice(
         Invoice.id == invoice_id,
         Invoice.is_deleted == False
     ).first()
-    
+
     if not invoice:
-        raise ResourceNotFoundError("Invoice", Invoice_id)
-    
+        raise ResourceNotFoundError("Invoice", invoice_id)
+
     # Don't allow deleting paid invoices
     if invoice.status == InvoiceStatus.PAID.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete a paid invoice"
         )
-    
+
     invoice.is_deleted = True
     db.commit()
-    
+
     return MessageResponse(message="Invoice deleted successfully")
 
 
@@ -256,18 +252,18 @@ async def send_invoice(
         Invoice.id == invoice_id,
         Invoice.is_deleted == False
     ).first()
-    
+
     if not invoice:
-        raise ResourceNotFoundError("Invoice", Invoice_id)
-    
+        raise ResourceNotFoundError("Invoice", invoice_id)
+
     from datetime import datetime
     invoice.status = InvoiceStatus.SENT.value
     invoice.sent_at = datetime.utcnow()
-    
+
     db.commit()
-    
+
     # TODO: Send email to client
-    
+
     return MessageResponse(message="Invoice sent successfully")
 
 
@@ -283,10 +279,10 @@ async def record_payment(
         Invoice.id == invoice_id,
         Invoice.is_deleted == False
     ).first()
-    
+
     if not invoice:
-        raise ResourceNotFoundError("Invoice", Invoice_id)
-    
+        raise ResourceNotFoundError("Invoice", invoice_id)
+
     payment = Payment(
         invoice_id=invoice_id,
         amount=data.amount,
@@ -297,21 +293,21 @@ async def record_payment(
         notes=data.notes,
         created_by=current_user.id
     )
-    
+
     db.add(payment)
-    
+
     # Update invoice
     invoice.amount_paid += data.amount
     invoice.amount_due -= data.amount
-    
+
     if invoice.amount_due <= 0:
         invoice.status = InvoiceStatus.PAID.value
     else:
         invoice.status = InvoiceStatus.PARTIAL.value
-    
+
     db.commit()
     db.refresh(payment)
-    
+
     return PaymentResponse.model_validate(payment)
 
 
@@ -326,5 +322,6 @@ async def get_invoice_payments(
         Payment.invoice_id == invoice_id,
         Payment.is_deleted == False
     ).order_by(Payment.payment_date).all()
-    
+
     return [PaymentResponse.model_validate(p) for p in payments]
+

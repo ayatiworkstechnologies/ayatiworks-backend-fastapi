@@ -2,9 +2,9 @@
 Permission schemas for API requests and responses.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List
 from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class PermissionBase(BaseModel):
@@ -12,7 +12,7 @@ class PermissionBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     code: str = Field(..., min_length=1, max_length=100)
     module: str = Field(..., min_length=1, max_length=50)
-    description: Optional[str] = Field(None, max_length=255)
+    description: str | None = Field(None, max_length=255)
 
 
 class PermissionCreate(PermissionBase):
@@ -22,9 +22,9 @@ class PermissionCreate(PermissionBase):
 
 class PermissionUpdate(BaseModel):
     """Schema for updating a permission."""
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=255)
-    is_active: Optional[bool] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=255)
+    is_active: bool | None = None
 
 
 class PermissionResponse(PermissionBase):
@@ -32,7 +32,7 @@ class PermissionResponse(PermissionBase):
     id: int
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -41,21 +41,22 @@ class PermissionResponse(PermissionBase):
 class PermissionListResponse(BaseModel):
     """Response schema for listing permissions grouped by module."""
     module: str
-    permissions: List[PermissionResponse]
+    permissions: list[PermissionResponse]
 
 
 class PermissionGroupedResponse(BaseModel):
     """Response schema for all permissions grouped by module."""
     total: int
-    modules: List[PermissionListResponse]
+    modules: list[PermissionListResponse]
 
 
 class RolePermissionAssign(BaseModel):
     """Schema for assigning/removing permissions to/from a role."""
-    permission_ids: List[int] = Field(..., min_items=1)
+    permission_ids: list[int] = Field(..., min_items=1)
 
 
 class UserPermissionCheck(BaseModel):
     """Schema for checking if user has specific permission."""
     permission_code: str
     has_permission: bool
+

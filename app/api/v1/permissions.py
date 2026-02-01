@@ -2,21 +2,24 @@
 Permission API endpoints.
 """
 
-from typing import Any, List, Dict
 from collections import defaultdict
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_active_superuser, get_current_active_user, get_user_permissions
+from app.core.permissions import check_permission
 from app.database import get_db
-from app.models.auth import Permission, User, RolePermission
+from app.models.auth import Permission, RolePermission, User
 from app.schemas.permission import (
-    PermissionCreate, PermissionUpdate, PermissionResponse,
-    PermissionGroupedResponse, PermissionListResponse,
-    UserPermissionCheck
+    PermissionCreate,
+    PermissionGroupedResponse,
+    PermissionListResponse,
+    PermissionResponse,
+    PermissionUpdate,
+    UserPermissionCheck,
 )
-from app.api.deps import get_current_active_user, get_current_active_superuser, get_user_permissions
-from app.core.permissions import get_all_permissions, check_permission
 
 router = APIRouter()
 
@@ -31,12 +34,12 @@ def list_all_permissions_grouped(
     Available to all authenticated users.
     """
     permissions = db.query(Permission).filter(Permission.is_active == True).all()
-    
+
     # Group by module
-    grouped: Dict[str, List[Permission]] = defaultdict(list)
+    grouped: dict[str, list[Permission]] = defaultdict(list)
     for perm in permissions:
         grouped[perm.module].append(perm)
-    
+
     # Format response
     modules = []
     for module_name, perms in sorted(grouped.items()):
@@ -44,14 +47,14 @@ def list_all_permissions_grouped(
             module=module_name,
             permissions=perms
         ))
-    
+
     return PermissionGroupedResponse(
         total=len(permissions),
         modules=modules
     )
 
 
-@router.get("/role/{role_id}", response_model=List[PermissionResponse])
+@router.get("/role/{role_id}", response_model=list[PermissionResponse])
 def get_role_permissions(
     role_id: int,
     db: Session = Depends(get_db),
@@ -63,16 +66,16 @@ def get_role_permissions(
     role_perms = db.query(RolePermission).filter(
         RolePermission.role_id == role_id
     ).all()
-    
+
     permissions = []
     for rp in role_perms:
         if rp.permission:
             permissions.append(rp.permission)
-    
+
     return permissions
 
 
-@router.get("/my-permissions", response_model=List[PermissionResponse])
+@router.get("/my-permissions", response_model=list[PermissionResponse])
 def get_my_permissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -82,16 +85,16 @@ def get_my_permissions(
     """
     if not current_user.role_id:
         return []
-    
+
     role_perms = db.query(RolePermission).filter(
         RolePermission.role_id == current_user.role_id
     ).all()
-    
+
     permissions = []
     for rp in role_perms:
         if rp.permission:
             permissions.append(rp.permission)
-    
+
     return permissions
 
 
@@ -106,14 +109,14 @@ def check_user_permission(
     """
     user_perms = get_user_permissions(current_user, db)
     has_perm = check_permission(user_perms, permission_code)
-    
+
     return UserPermissionCheck(
         permission_code=permission_code,
         has_permission=has_perm
     )
 
 
-@router.get("", response_model=List[PermissionResponse])
+@router.get("", response_model=list[PermissionResponse])
 def list_permissions(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -125,10 +128,10 @@ def list_permissions(
     List permissions with optional filtering by module.
     """
     query = db.query(Permission)
-    
+
     if module:
         query = query.filter(Permission.module == module)
-    
+
     permissions = query.offset(skip).limit(limit).all()
     return permissions
 
@@ -166,7 +169,7 @@ def create_permission(
             status_code=400,
             detail="The permission with this code already exists in the system.",
         )
-    
+
     permission = Permission(**permission_in.model_dump(), is_active=True)
     db.add(permission)
     db.commit()
@@ -190,11 +193,11 @@ def update_permission(
             status_code=404,
             detail="The permission does not exist in the system",
         )
-    
+
     update_data = permission_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(permission, field, value)
-        
+
     db.add(permission)
     db.commit()
     db.refresh(permission)
@@ -217,8 +220,9 @@ def delete_permission(
             status_code=404,
             detail="The permission does not exist in the system",
         )
-    
+
     # Could add check to prevent deletion if in use
     db.delete(permission)
     db.commit()
     return permission
+

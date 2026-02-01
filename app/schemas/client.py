@@ -2,53 +2,52 @@
 Client and CRM schemas.
 """
 
-from typing import Optional, List
-from datetime import date, datetime
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from datetime import date
+
+from pydantic import EmailStr, Field, field_validator
 
 from app.schemas.common import BaseSchema, TimestampSchema
-
 
 # ============== Client Schemas ==============
 
 class ClientBase(BaseSchema):
     """Client base schema."""
-    
+
     name: str = Field(..., min_length=2, max_length=255)
-    company_name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    company_name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
 
 
 class ClientContactCreate(BaseSchema):
     """Client contact creation schema."""
     name: str = Field(..., min_length=2, max_length=100)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    designation: Optional[str] = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    designation: str | None = None
     is_primary: bool = False
 
 
 class ClientCreate(ClientBase):
     """Client create schema."""
-    
-    code: Optional[str] = None
-    website: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    postal_code: Optional[str] = None
-    industry: Optional[str] = None
-    company_size: Optional[str] = None
-    annual_revenue: Optional[float] = None
-    tax_id: Optional[str] = None
-    manager_id: Optional[int] = None
-    source: Optional[str] = None
-    source: Optional[str] = None
-    tags: Optional[List[str]] = None
-    contacts: Optional[List[ClientContactCreate]] = None
-    
+
+    code: str | None = None
+    website: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    postal_code: str | None = None
+    industry: str | None = None
+    company_size: str | None = None
+    annual_revenue: float | None = None
+    tax_id: str | None = None
+    manager_id: int | None = None
+    source: str | None = None
+    source: str | None = None
+    tags: list[str] | None = None
+    contacts: list[ClientContactCreate] | None = None
+
     @field_validator('manager_id', mode='before')
     @classmethod
     def empty_str_to_none(cls, v):
@@ -59,24 +58,24 @@ class ClientCreate(ClientBase):
 
 class ClientUpdate(BaseSchema):
     """Client update schema."""
-    
-    name: Optional[str] = None
-    company_name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    industry: Optional[str] = None
-    company_size: Optional[str] = None
-    annual_revenue: Optional[float] = None
-    tax_id: Optional[str] = None
-    manager_id: Optional[int] = None
-    status: Optional[str] = None
-    tags: Optional[List[str]] = None
-    
+
+    name: str | None = None
+    company_name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    website: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    industry: str | None = None
+    company_size: str | None = None
+    annual_revenue: float | None = None
+    tax_id: str | None = None
+    manager_id: int | None = None
+    status: str | None = None
+    tags: list[str] | None = None
+
     @field_validator('manager_id', mode='before')
     @classmethod
     def empty_str_to_none(cls, v):
@@ -87,21 +86,21 @@ class ClientUpdate(BaseSchema):
 
 class ClientResponse(ClientBase, TimestampSchema):
     """Client response schema."""
-    
+
     id: int
-    code: Optional[str] = None
-    website: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    industry: Optional[str] = None
-    company_size: Optional[str] = None
-    annual_revenue: Optional[float] = None
-    tax_id: Optional[str] = None
-    manager_id: Optional[int] = None
+    code: str | None = None
+    website: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    industry: str | None = None
+    company_size: str | None = None
+    annual_revenue: float | None = None
+    tax_id: str | None = None
+    manager_id: int | None = None
     status: str
-    
+
     # Counts
     project_count: int = 0
     invoice_count: int = 0
@@ -109,11 +108,11 @@ class ClientResponse(ClientBase, TimestampSchema):
 
 class ClientListResponse(BaseSchema):
     """Client list item."""
-    
+
     id: int
     name: str
-    company_name: Optional[str] = None
-    email: Optional[str] = None
+    company_name: str | None = None
+    email: str | None = None
     status: str
 
 
@@ -121,95 +120,96 @@ class ClientListResponse(BaseSchema):
 
 class LeadCreate(BaseSchema):
     """Lead create schema."""
-    
+
     name: str
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    company: Optional[str] = None
-    designation: Optional[str] = None
-    source_id: Optional[int] = None
-    campaign: Optional[str] = None
-    source_details: Optional[str] = None
-    interest: Optional[str] = None
-    budget: Optional[float] = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    company: str | None = None
+    designation: str | None = None
+    source_id: int | None = None
+    campaign: str | None = None
+    source_details: str | None = None
+    interest: str | None = None
+    budget: float | None = None
 
 
 class LeadUpdate(BaseSchema):
     """Lead update schema."""
-    
-    name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    company: Optional[str] = None
-    status: Optional[str] = None
-    score: Optional[int] = None
-    campaign: Optional[str] = None
-    assigned_to: Optional[int] = None
+
+    name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    company: str | None = None
+    status: str | None = None
+    score: int | None = None
+    campaign: str | None = None
+    assigned_to: int | None = None
 
 
 class LeadResponse(TimestampSchema):
     """Lead response schema."""
-    
+
     id: int
     name: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    company: Optional[str] = None
+    email: str | None = None
+    phone: str | None = None
+    company: str | None = None
     status: str
     score: int
-    campaign: Optional[str] = None
-    assigned_to: Optional[int] = None
-    
+    campaign: str | None = None
+    assigned_to: int | None = None
+
     # Display
-    source_name: Optional[str] = None
-    assigned_to_name: Optional[str] = None
+    source_name: str | None = None
+    assigned_to_name: str | None = None
 
 
 # ============== Deal Schemas ==============
 
 class DealCreate(BaseSchema):
     """Deal create schema."""
-    
+
     name: str
-    lead_id: Optional[int] = None
-    client_id: Optional[int] = None
-    pipeline_id: Optional[int] = None
-    stage: Optional[str] = None
-    value: Optional[float] = None
+    lead_id: int | None = None
+    client_id: int | None = None
+    pipeline_id: int | None = None
+    stage: str | None = None
+    value: float | None = None
     currency: str = "USD"
-    expected_close_date: Optional[date] = None
-    owner_id: Optional[int] = None
+    expected_close_date: date | None = None
+    owner_id: int | None = None
 
 
 class DealUpdate(BaseSchema):
     """Deal update schema."""
-    
-    name: Optional[str] = None
-    stage: Optional[str] = None
-    value: Optional[float] = None
-    probability: Optional[int] = None
-    expected_close_date: Optional[date] = None
-    owner_id: Optional[int] = None
-    won_reason: Optional[str] = None
-    lost_reason: Optional[str] = None
+
+    name: str | None = None
+    stage: str | None = None
+    value: float | None = None
+    probability: int | None = None
+    expected_close_date: date | None = None
+    owner_id: int | None = None
+    won_reason: str | None = None
+    lost_reason: str | None = None
 
 
 class DealResponse(TimestampSchema):
     """Deal response schema."""
-    
+
     id: int
     name: str
-    lead_id: Optional[int] = None
-    client_id: Optional[int] = None
-    pipeline_id: Optional[int] = None
-    stage: Optional[str] = None
-    value: Optional[float] = None
+    lead_id: int | None = None
+    client_id: int | None = None
+    pipeline_id: int | None = None
+    stage: str | None = None
+    value: float | None = None
     currency: str
     probability: int
-    weighted_value: Optional[float] = None
-    expected_close_date: Optional[date] = None
-    owner_id: Optional[int] = None
-    
+    weighted_value: float | None = None
+    expected_close_date: date | None = None
+    owner_id: int | None = None
+
     # Display
-    client_name: Optional[str] = None
-    owner_name: Optional[str] = None
+    client_name: str | None = None
+    owner_name: str | None = None
+

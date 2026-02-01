@@ -2,20 +2,26 @@
 Blog and CMS API routes.
 """
 
-from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import PermissionChecker, get_optional_user
 from app.database import get_db
-from app.api.deps import get_current_active_user, get_optional_user, PermissionChecker
 from app.models.auth import User
-from app.schemas.common import PaginatedResponse, MessageResponse
 from app.schemas.blog import (
-    BlogCreate, BlogUpdate, BlogResponse,
-    BlogCategoryCreate, BlogCategoryUpdate, BlogCategoryResponse,
-    BlogAuthorCreate, BlogAuthorUpdate, BlogAuthorResponse
+    BlogAuthorCreate,
+    BlogAuthorResponse,
+    BlogAuthorUpdate,
+    BlogCategoryCreate,
+    BlogCategoryResponse,
+    BlogCategoryUpdate,
+    BlogCreate,
+    BlogResponse,
+    BlogUpdate,
 )
-from app.services.blog_service import BlogService, BlogCategoryService, BlogAuthorService
+from app.schemas.common import MessageResponse, PaginatedResponse
+from app.services.blog_service import BlogAuthorService, BlogCategoryService, BlogService
 
 router = APIRouter(tags=["Blog & CMS"])
 
@@ -24,22 +30,22 @@ router = APIRouter(tags=["Blog & CMS"])
 
 @router.get("/blogs", response_model=PaginatedResponse[BlogResponse])
 async def list_blogs(
-    category_id: Optional[int] = None,
-    author_id: Optional[int] = None,
-    status: Optional[str] = None,
-    search: Optional[str] = None,
+    category_id: int | None = None,
+    author_id: int | None = None,
+    status: str | None = None,
+    search: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     """List all published blogs (public) or all blogs (authenticated)."""
     service = BlogService(db)
-    
+
     # Public users only see published
     if not current_user:
         status = "published"
-    
+
     blogs, total = service.get_all_blogs(
         category_id=category_id,
         author_id=author_id,
@@ -48,7 +54,7 @@ async def list_blogs(
         page=page,
         page_size=page_size
     )
-    
+
     # Convert to response objects with display names
     items = []
     for b in blogs:
@@ -56,19 +62,19 @@ async def list_blogs(
         item.author_name = b.author.full_name if b.author else "Anonymous"
         item.category_name = b.category.name if b.category else None
         item.category_slug = b.category.slug if b.category else None
-        
+
         # Populate author_profile
         if b.author and hasattr(b.author, 'blog_author_profile'):
             profile = b.author.blog_author_profile
             # Handle list backref if not unique
             if isinstance(profile, list):
                 profile = profile[0] if profile else None
-            
+
             if profile:
                 item.author_profile = BlogAuthorResponse.model_validate(profile)
-        
+
         items.append(item)
-        
+
     return PaginatedResponse.create(items, total, page, page_size)
 
 
@@ -79,14 +85,14 @@ async def get_blog(
 ):
     """Get blog by ID or slug (public for published, auth for drafts)."""
     service = BlogService(db)
-    
+
     # Check if it's a numeric ID or a slug
     blog = None
     try:
         # Try to treat as ID first
         blog_id = int(id_or_slug)
         blog = service.get_blog_by_id(blog_id)
-        
+
         # Fallback: If ID lookup failed but list_blogs claims it exists (consistency issue debug)
         if not blog:
              # Try expensive scan (Temporary fix for potential DB/ORM inconsistency)
@@ -99,40 +105,40 @@ async def get_blog(
     except ValueError:
         # If not an integer, treat as slug
         blog = service.get_blog_by_slug(id_or_slug, only_published=False)
-    
+
     if not blog:
-        # Fallback: if ID lookup failed (e.g. ID not found), try as slug just in case 
+        # Fallback: if ID lookup failed (e.g. ID not found), try as slug just in case
         if id_or_slug.isdigit():
              blog = service.get_blog_by_slug(id_or_slug, only_published=False)
-    
+
     if not blog:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Blog not found"
         )
-    
+
     # Only increment views for published posts accessed by slug
     # If accessed by ID, we assume it's an admin/edit view, unless it's a numeric slug?
     # Let's say we only increment if it's NOT a digit lookup OR if we found it via slug fallback.
     is_slug_lookup = not id_or_slug.isdigit()
     if is_slug_lookup and blog.status == "published":
         service.increment_views(blog.id)
-    
+
     item = BlogResponse.model_validate(blog)
-    
+
     item.author_name = blog.author.full_name if blog.author else "Anonymous"
     item.category_name = blog.category.name if blog.category else None
     item.category_slug = blog.category.slug if blog.category else None
-    
+
     # Populate author_profile
     if blog.author and hasattr(blog.author, 'blog_author_profile'):
         profile = blog.author.blog_author_profile
         if isinstance(profile, list):
             profile = profile[0] if profile else None
-        
+
         if profile:
             item.author_profile = BlogAuthorResponse.model_validate(profile)
-            
+
     return item
 
 
@@ -145,7 +151,7 @@ async def get_blog_by_category_and_slug(
     """Get blog by category slug and blog slug (public endpoint)."""
     service = BlogService(db)
     category_service = BlogCategoryService(db)
-    
+
     # First find the category
     category = category_service.get_category_by_slug(category_slug)
     if not category:
@@ -153,7 +159,7 @@ async def get_blog_by_category_and_slug(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Category not found"
         )
-    
+
     # Then find blog with matching slug and category
     blog = service.get_blog_by_slug_and_category(blog_slug, category.id, only_published=True)
     if not blog:
@@ -161,23 +167,23 @@ async def get_blog_by_category_and_slug(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Blog not found"
         )
-    
+
     service.increment_views(blog.id)
-    
+
     item = BlogResponse.model_validate(blog)
     item.author_name = blog.author.full_name if blog.author else "Anonymous"
     item.category_name = blog.category.name if blog.category else None
     item.category_slug = blog.category.slug if blog.category else None
-    
+
     # Populate author_profile
     if blog.author and hasattr(blog.author, 'blog_author_profile'):
         profile = blog.author.blog_author_profile
         if isinstance(profile, list):
             profile = profile[0] if profile else None
-        
+
         if profile:
             item.author_profile = BlogAuthorResponse.model_validate(profile)
-            
+
     return item
 
 
@@ -189,14 +195,14 @@ async def create_blog(
 ):
     """Create a new blog post."""
     service = BlogService(db)
-    
+
     # Check slug uniqueness
     if service.get_blog_by_slug(data.slug, only_published=False):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Slug already exists"
         )
-    
+
     # Determine author
     author_id = data.author_id if data.author_id else current_user.id
     blog = service.create_blog(data, author_id=author_id)
@@ -212,17 +218,17 @@ async def update_blog(
 ):
     """Update a blog post."""
     service = BlogService(db)
-    
+
     # If author_id is changed, ensure user has permission? (Skip for now, trust input)
-    
+
     blog = service.update_blog(blog_id, data, updated_by=current_user.id)
-    
+
     if not blog:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Blog not found"
         )
-    
+
     return BlogResponse.model_validate(blog)
 
 
@@ -244,7 +250,7 @@ async def delete_blog(
 
 # ============== Blog Category Endpoints ==============
 
-@router.get("/blog-categories", response_model=List[BlogCategoryResponse])
+@router.get("/blog-categories", response_model=list[BlogCategoryResponse])
 async def list_categories(db: Session = Depends(get_db)):
     """List all blog categories."""
     service = BlogCategoryService(db)
@@ -258,13 +264,13 @@ async def get_category(
 ):
     """Get blog category by ID or slug."""
     service = BlogCategoryService(db)
-    
+
     category = None
     if id_or_slug.isdigit():
         category = service.get_by_id(int(id_or_slug))
     else:
         category = service.get_category_by_slug(id_or_slug)
-        
+
     if not category:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -315,7 +321,7 @@ async def delete_category(
 
 # ============== Blog Author Endpoints ==============
 
-@router.get("/blog-authors", response_model=List[BlogAuthorResponse])
+@router.get("/blog-authors", response_model=list[BlogAuthorResponse])
 async def list_authors(db: Session = Depends(get_db)):
     """List all blog authors."""
     service = BlogAuthorService(db)
@@ -349,7 +355,7 @@ async def create_author(
     # Check if profile already exists for user
     if service.get_by_user_id(data.user_id):
         raise HTTPException(status_code=400, detail="Author profile already exists for this user")
-    
+
     author = service.create(data, created_by=current_user.id)
     return BlogAuthorResponse.model_validate(author)
 
@@ -380,3 +386,4 @@ async def delete_author(
     if not service.delete(author_id, deleted_by=current_user.id):
         raise HTTPException(status_code=404, detail="Author profile not found")
     return MessageResponse(message="Author profile deleted successfully")
+

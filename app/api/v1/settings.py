@@ -2,17 +2,15 @@
 Settings and Feature Flags API routes.
 """
 
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker
-from app.models.auth import User
-from app.models.settings import SuperSettings, FeatureFlag
-from app.schemas.common import MessageResponse
+from app.api.deps import PermissionChecker, get_current_active_user
 from app.core.feature_control import get_module_features, is_feature_enabled
-
+from app.database import get_db
+from app.models.auth import User
+from app.models.settings import FeatureFlag, SuperSettings
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -21,22 +19,22 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 
 @router.get("")
 async def list_settings(
-    category: Optional[str] = None,
-    scope: Optional[str] = None,
+    category: str | None = None,
+    scope: str | None = None,
     current_user: User = Depends(PermissionChecker("settings.view")),
     db: Session = Depends(get_db)
 ):
     """List all settings."""
     query = db.query(SuperSettings).filter(SuperSettings.is_deleted == False)
-    
+
     if category:
         query = query.filter(SuperSettings.category == category)
-    
+
     if scope:
         query = query.filter(SuperSettings.scope == scope)
-    
+
     settings = query.all()
-    
+
     return [
         {
             "id": s.id,
@@ -57,7 +55,7 @@ async def list_settings(
 async def get_setting(
     key: str,
     scope: str = "global",
-    target_id: Optional[int] = None,
+    target_id: int | None = None,
     current_user: User = Depends(PermissionChecker("settings.view")),
     db: Session = Depends(get_db)
 ):
@@ -67,18 +65,18 @@ async def get_setting(
         SuperSettings.scope == scope,
         SuperSettings.is_deleted == False
     )
-    
+
     if target_id:
         query = query.filter(SuperSettings.target_id == target_id)
-    
+
     setting = query.first()
-    
+
     if not setting:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Setting not found"
         )
-    
+
     return {
         "key": setting.key,
         "value": setting.get_typed_value(),
@@ -93,7 +91,7 @@ async def update_setting(
     value: str,
     value_type: str = "string",
     scope: str = "global",
-    target_id: Optional[int] = None,
+    target_id: int | None = None,
     current_user: User = Depends(PermissionChecker("settings.edit")),
     db: Session = Depends(get_db)
 ):
@@ -103,12 +101,12 @@ async def update_setting(
         SuperSettings.scope == scope,
         SuperSettings.is_deleted == False
     )
-    
+
     if target_id:
         query = query.filter(SuperSettings.target_id == target_id)
-    
+
     setting = query.first()
-    
+
     if setting:
         setting.value = value
         setting.value_type = value_type
@@ -123,9 +121,9 @@ async def update_setting(
             created_by=current_user.id
         )
         db.add(setting)
-    
+
     db.commit()
-    
+
     return {"message": "Setting updated successfully"}
 
 
@@ -138,7 +136,7 @@ async def list_feature_modules(
 ):
     """List all modules with their features."""
     modules = ["attendance", "leave", "payroll", "employee", "project"]
-    
+
     result = []
     for module in modules:
         features = get_module_features(module)
@@ -146,28 +144,28 @@ async def list_feature_modules(
             "module": module,
             "features": features
         })
-    
+
     return result
 
 
 @router.get("/features")
 async def list_features(
-    module: Optional[str] = None,
-    scope: Optional[str] = None,
+    module: str | None = None,
+    scope: str | None = None,
     current_user: User = Depends(PermissionChecker("feature.manage")),
     db: Session = Depends(get_db)
 ):
     """List all feature flags."""
     query = db.query(FeatureFlag).filter(FeatureFlag.is_deleted == False)
-    
+
     if module:
         query = query.filter(FeatureFlag.module == module)
-    
+
     if scope:
         query = query.filter(FeatureFlag.scope == scope)
-    
+
     flags = query.all()
-    
+
     return [
         {
             "id": f.id,
@@ -189,7 +187,7 @@ async def toggle_feature(
     feature: str,
     is_enabled: bool,
     scope: str = "global",
-    target_id: Optional[int] = None,
+    target_id: int | None = None,
     current_user: User = Depends(PermissionChecker("feature.manage")),
     db: Session = Depends(get_db)
 ):
@@ -200,12 +198,12 @@ async def toggle_feature(
         FeatureFlag.scope == scope,
         FeatureFlag.is_deleted == False
     )
-    
+
     if target_id:
         query = query.filter(FeatureFlag.target_id == target_id)
-    
+
     flag = query.first()
-    
+
     if flag:
         flag.is_enabled = is_enabled
         flag.updated_by = current_user.id
@@ -219,9 +217,9 @@ async def toggle_feature(
             created_by=current_user.id
         )
         db.add(flag)
-    
+
     db.commit()
-    
+
     return {
         "message": f"Feature {module}.{feature} {'enabled' if is_enabled else 'disabled'}",
         "is_enabled": is_enabled
@@ -243,9 +241,10 @@ async def check_feature(
         company_id=current_user.company_id,
         role_id=current_user.role_id
     )
-    
+
     return {
         "module": module,
         "feature": feature,
         "is_enabled": enabled
     }
+

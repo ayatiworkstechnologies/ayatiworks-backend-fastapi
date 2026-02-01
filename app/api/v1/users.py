@@ -2,23 +2,23 @@
 User management API routes.
 """
 
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import PermissionChecker
 from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker
-from app.models.auth import User, Role, RolePermission, Permission
-from app.services.auth_service import AuthService
+from app.models.auth import Permission, Role, RolePermission, User
 from app.schemas.auth import (
-    UserCreate, UserUpdate, UserResponse, UserListResponse,
-    RoleCreate, RoleUpdate, RoleResponse, RoleListResponse,
-    PermissionResponse, PermissionCreate, PermissionUpdate
+    PermissionCreate,
+    PermissionResponse,
+    PermissionUpdate,
+    RoleCreate,
+    RoleListResponse,
+    RoleResponse,
+    RoleUpdate,
 )
-from app.schemas.common import PaginatedResponse, MessageResponse
-from app.core.permissions import get_all_permissions
-from app.core.security import hash_password
-
+from app.schemas.common import MessageResponse
 
 router = APIRouter(tags=["Users & Roles"])
 
@@ -30,16 +30,16 @@ router = APIRouter(tags=["Users & Roles"])
 
 @router.get("/permissions", response_model=list[PermissionResponse])
 async def list_permissions(
-    module: Optional[str] = None,
+    module: str | None = None,
     current_user: User = Depends(PermissionChecker("role.view")),
     db: Session = Depends(get_db)
 ):
     """List all available permissions."""
     query = db.query(Permission)
-    
+
     if module:
         query = query.filter(Permission.module == module)
-        
+
     permissions = query.order_by(Permission.module, Permission.name).all()
     return [PermissionResponse.model_validate(p) for p in permissions]
 
@@ -58,18 +58,18 @@ async def create_permission(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Permission code already exists"
         )
-    
+
     permission = Permission(
         name=data.name,
         code=data.code,
         module=data.module,
         description=data.description
     )
-    
+
     db.add(permission)
     db.commit()
     db.refresh(permission)
-    
+
     return PermissionResponse.model_validate(permission)
 
 
@@ -82,15 +82,15 @@ async def update_permission(
 ):
     """Update a permission."""
     permission = db.query(Permission).filter(Permission.id == permission_id).first()
-    
+
     if not permission:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Permission not found"
         )
-        
+
     update_data = data.model_dump(exclude_unset=True)
-    
+
     # Check code uniqueness if changing
     if 'code' in update_data and update_data['code'] != permission.code:
         existing = db.query(Permission).filter(Permission.code == update_data['code']).first()
@@ -99,13 +99,13 @@ async def update_permission(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Permission code already exists"
             )
-            
+
     for field, value in update_data.items():
         setattr(permission, field, value)
-    
+
     db.commit()
     db.refresh(permission)
-    
+
     return PermissionResponse.model_validate(permission)
 
 
@@ -117,16 +117,16 @@ async def delete_permission(
 ):
     """Delete a permission."""
     permission = db.query(Permission).filter(Permission.id == permission_id).first()
-    
+
     if not permission:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Permission not found"
         )
-    
+
     db.delete(permission)
     db.commit()
-    
+
     return MessageResponse(message="Permission deleted successfully")
 
 
@@ -137,20 +137,20 @@ async def delete_permission(
 
 @router.get("/roles", response_model=list[RoleListResponse])
 async def list_roles(
-    company_id: Optional[int] = None,
+    company_id: int | None = None,
     current_user: User = Depends(PermissionChecker("role.view")),
     db: Session = Depends(get_db)
 ):
     """List all roles."""
     query = db.query(Role).filter(Role.is_deleted == False)
-    
+
     if company_id:
         query = query.filter(
-            (Role.company_id == company_id) | (Role.company_id == None)
+            (Role.company_id == company_id) | (Role.company_id is None)
         )
-    
+
     roles = query.all()
-    
+
     result = []
     for role in roles:
         result.append(RoleListResponse(
@@ -163,7 +163,7 @@ async def list_roles(
             is_system=role.is_system,
             permission_count=len(role.permissions)
         ))
-    
+
     return result
 
 
@@ -178,17 +178,17 @@ async def get_role(
         Role.id == role_id,
         Role.is_deleted == False
     ).first()
-    
+
     if not role:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Role not found"
         )
-    
+
     # Construct response with permissions
     response = RoleResponse.model_validate(role)
     response.permissions = [PermissionResponse.model_validate(rp.permission) for rp in role.permissions]
-    
+
     return response
 
 
@@ -206,7 +206,7 @@ async def create_role(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Role code already exists"
         )
-    
+
     role = Role(
         name=data.name,
         code=data.code,
@@ -215,11 +215,11 @@ async def create_role(
         company_id=data.company_id,
         created_by=current_user.id
     )
-    
+
     db.add(role)
     db.commit()
     db.refresh(role)
-    
+
     # Add permissions
     if data.permission_ids:
         for perm_id in data.permission_ids:
@@ -227,13 +227,13 @@ async def create_role(
             db.add(rp)
         db.commit()
         db.refresh(role)
-    
+
     # Construct response with permissions
     response = RoleResponse.model_validate(role)
     # Re-fetch with permissions explicitly to be safe or rely on lazy loading if configured
     # Using explicit list comprehension to ensure schema compatibility
     response.permissions = [PermissionResponse.model_validate(rp.permission) for rp in role.permissions]
-    
+
     return response
 
 
@@ -249,44 +249,44 @@ async def update_role(
         Role.id == role_id,
         Role.is_deleted == False
     ).first()
-    
+
     if not role:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Role not found"
         )
-    
-    if role.is_system and data.is_active is False:
+
+    if role.is_system and data.is_active == False:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot deactivate system role"
         )
-        
+
     update_data = data.model_dump(exclude_unset=True)
-    
+
     # Handle permissions separately
     if 'permission_ids' in update_data:
         permission_ids = update_data.pop('permission_ids')
-        
+
         # Remove existing permissions
         db.query(RolePermission).filter(RolePermission.role_id == role.id).delete()
-        
+
         # Add new permissions
         for perm_id in permission_ids:
             rp = RolePermission(role_id=role.id, permission_id=perm_id)
             db.add(rp)
-            
+
     for field, value in update_data.items():
         setattr(role, field, value)
-    
+
     role.updated_by = current_user.id
     db.commit()
     db.refresh(role)
-    
+
     # Construct response with permissions
     response = RoleResponse.model_validate(role)
     response.permissions = [PermissionResponse.model_validate(rp.permission) for rp in role.permissions]
-    
+
     return response
 
 
@@ -301,31 +301,21 @@ async def delete_role(
         Role.id == role_id,
         Role.is_deleted == False
     ).first()
-    
+
     if not role:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Role not found"
         )
-    
+
     if role.is_system:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete system role"
         )
-    
+
     role.soft_delete(current_user.id)
     db.commit()
-    
+
     return MessageResponse(message="Role deleted successfully")
 
-
-# ============== Permission Endpoints ==============
-
-@router.get("/permissions", response_model=list[dict])
-async def list_permissions(
-    current_user: User = Depends(PermissionChecker("role.view")),
-    db: Session = Depends(get_db)
-):
-    """List all available permissions."""
-    return get_all_permissions()

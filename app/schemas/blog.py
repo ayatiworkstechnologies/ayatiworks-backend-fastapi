@@ -1,6 +1,6 @@
-from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+
+from pydantic import Field
 
 from app.schemas.common import BaseSchema, TimestampSchema
 
@@ -10,11 +10,11 @@ class BlogCategoryBase(BaseSchema):
     """Blog category base schema."""
     name: str = Field(..., min_length=2, max_length=100)
     slug: str = Field(..., min_length=2, max_length=100)
-    description: Optional[str] = None
-    parent_id: Optional[int] = None
+    description: str | None = None
+    parent_id: int | None = None
     order: int = 0
-    meta_title: Optional[str] = None
-    meta_description: Optional[str] = None
+    meta_title: str | None = None
+    meta_description: str | None = None
 
 class BlogCategoryCreate(BlogCategoryBase):
     """Blog category create schema."""
@@ -22,13 +22,13 @@ class BlogCategoryCreate(BlogCategoryBase):
 
 class BlogCategoryUpdate(BaseSchema):
     """Blog category update schema."""
-    name: Optional[str] = None
-    slug: Optional[str] = None
-    description: Optional[str] = None
-    parent_id: Optional[int] = None
-    order: Optional[int] = None
-    meta_title: Optional[str] = None
-    meta_description: Optional[str] = None
+    name: str | None = None
+    slug: str | None = None
+    description: str | None = None
+    parent_id: int | None = None
+    order: int | None = None
+    meta_title: str | None = None
+    meta_description: str | None = None
 
 class BlogCategoryResponse(BlogCategoryBase, TimestampSchema):
     """Blog category response schema."""
@@ -39,9 +39,9 @@ class BlogCategoryResponse(BlogCategoryBase, TimestampSchema):
 
 class BlogAuthorBase(BaseSchema):
     """Blog author base schema."""
-    display_name: Optional[str] = None
-    bio: Optional[str] = None
-    social_links: Optional[dict] = None
+    display_name: str | None = None
+    bio: str | None = None
+    social_links: dict | None = None
 
 class BlogAuthorCreate(BlogAuthorBase):
     """Blog author create schema."""
@@ -63,124 +63,129 @@ class BlogAuthorResponse(BlogAuthorBase, TimestampSchema):
 class BlogSection(BaseSchema):
     """Blog section schema for dynamic content blocks."""
     # Section type: content, image, quote, code, video, cta
-    section_type: Optional[str] = "content"
-    
+    section_type: str | None = "content"
+
     # Common fields
-    heading: Optional[str] = None
-    heading_level: Optional[str] = "h2"  # h2, h3, h4
-    
+    heading: str | None = None
+    heading_level: str | None = "h2"  # h2, h3, h4
+
     # Content section
-    content: Optional[str] = None  # HTML content from rich text editor
-    
+    content: str | None = None  # HTML content from rich text editor
+
     # Image section
-    image: Optional[str] = None  # Image URL
-    image_alt: Optional[str] = None  # Image alt text
-    image_caption: Optional[str] = None  # Image caption
-    
+    image: str | None = None  # Image URL
+    image_alt: str | None = None  # Image alt text
+    image_caption: str | None = None  # Image caption
+
     # Quote section
-    quote: Optional[str] = None
-    quote_author: Optional[str] = None
-    
+    quote: str | None = None
+    quote_author: str | None = None
+
     # Code section
-    code: Optional[str] = None
-    code_language: Optional[str] = "javascript"
-    
+    code: str | None = None
+    code_language: str | None = "javascript"
+
     # Video section
-    video_url: Optional[str] = None
-    
+    video_url: str | None = None
+
     # CTA section
-    cta_text: Optional[str] = None
-    cta_url: Optional[str] = None
-    cta_style: Optional[str] = "primary"  # primary, secondary, gradient
+    cta_text: str | None = None
+    cta_url: str | None = None
+    cta_style: str | None = "primary"  # primary, secondary, gradient
 
 class BlogBase(BaseSchema):
     """Blog post base schema."""
     title: str = Field(..., min_length=2, max_length=255)
     slug: str = Field(..., min_length=2, max_length=255)
-    
+
     # Banner
-    banner_image: Optional[str] = None
-    banner_image_alt: Optional[str] = None
-    banner_title: Optional[str] = None
-    
+    banner_image: str | None = None
+    banner_image_alt: str | None = None
+    banner_title: str | None = None
+
     # Content
-    content: Optional[str] = None
-    excerpt: Optional[str] = None
-    
+    content: str | None = None
+    excerpt: str | None = None
+
     # Dynamic sections (array of section objects)
-    sections: Optional[List[dict]] = None  # List of BlogSection dicts
-    
+    sections: list[dict] | None = None  # List of BlogSection dicts
+
+    # FAQs
+    faqs: list[dict] | None = None  # List of {question, answer} dicts
+
     # Category
-    category_id: Optional[int] = None
-    featured_image: Optional[str] = None
-    featured_image_alt: Optional[str] = None
-    
+    category_id: int | None = None
+    featured_image: str | None = None
+    featured_image_alt: str | None = None
+
     # Blog date and read time
-    blog_date: Optional[datetime] = None
-    read_time: Optional[int] = None  # in minutes
-    
+    blog_date: datetime | None = None
+    read_time: int | None = None  # in minutes
+
     # Status and SEO
     status: str = "draft"
-    meta_title: Optional[str] = None
-    meta_description: Optional[str] = None
-    meta_keywords: Optional[str] = None
+    meta_title: str | None = None
+    meta_description: str | None = None
+    meta_keywords: str | None = None
     allow_comments: bool = True
     is_featured: bool = False
-    tags: Optional[List[str]] = None
+    tags: list[str] | None = None
 
 class BlogCreate(BlogBase):
     """Blog post create schema."""
-    author_id: Optional[int] = None
+    author_id: int | None = None
 
 class BlogUpdate(BaseSchema):
     """Blog post update schema."""
-    title: Optional[str] = None
-    slug: Optional[str] = None
-    
+    title: str | None = None
+    slug: str | None = None
+
     # Banner
-    banner_image: Optional[str] = None
-    banner_image_alt: Optional[str] = None
-    banner_title: Optional[str] = None
-    
+    banner_image: str | None = None
+    banner_image_alt: str | None = None
+    banner_title: str | None = None
+
     # Content
-    content: Optional[str] = None
-    excerpt: Optional[str] = None
-    sections: Optional[List[dict]] = None
-    
+    content: str | None = None
+    excerpt: str | None = None
+    sections: list[dict] | None = None
+    faqs: list[dict] | None = None
+
     # Category
-    category_id: Optional[int] = None
-    featured_image: Optional[str] = None
-    featured_image_alt: Optional[str] = None
-    
+    category_id: int | None = None
+    featured_image: str | None = None
+    featured_image_alt: str | None = None
+
     # Blog date and read time
-    blog_date: Optional[datetime] = None
-    read_time: Optional[int] = None
-    
+    blog_date: datetime | None = None
+    read_time: int | None = None
+
     # Status and SEO
-    status: Optional[str] = None
-    meta_title: Optional[str] = None
-    meta_description: Optional[str] = None
-    meta_keywords: Optional[str] = None
-    allow_comments: Optional[bool] = None
-    is_featured: Optional[bool] = None
-    tags: Optional[List[str]] = None
-    author_id: Optional[int] = None
+    status: str | None = None
+    meta_title: str | None = None
+    meta_description: str | None = None
+    meta_keywords: str | None = None
+    allow_comments: bool | None = None
+    is_featured: bool | None = None
+    tags: list[str] | None = None
+    author_id: int | None = None
 
 class BlogResponse(BlogBase, TimestampSchema):
     """Blog post response schema."""
     id: int
     author_id: int
-    published_at: Optional[datetime] = None
+    published_at: datetime | None = None
     views: int = 0
     likes: int = 0
-    
+
     # Nested display data
-    author_name: Optional[str] = None
-    category_name: Optional[str] = None
-    category_slug: Optional[str] = None  # For URL generation
-    
+    author_name: str | None = None
+    category_name: str | None = None
+    category_slug: str | None = None  # For URL generation
+
     # Full nested objects
-    author_profile: Optional[BlogAuthorResponse] = None
-    category: Optional[BlogCategoryResponse] = None
+    author_profile: BlogAuthorResponse | None = None
+    category: BlogCategoryResponse | None = None
+
 
 

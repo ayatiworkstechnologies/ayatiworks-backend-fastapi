@@ -4,12 +4,11 @@ File Upload API Endpoints
 import os
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request
-from fastapi.responses import JSONResponse
-from typing import Optional
 
-from app.config import get_settings
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+
 from app.api.deps import get_current_user
+from app.config import get_settings
 from app.models.auth import User
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
@@ -56,33 +55,33 @@ async def upload_image(
             status_code=400,
             detail=f"File type not allowed. Allowed types: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}"
         )
-    
+
     # Read file content
     content = await file.read()
-    
+
     # Validate file size
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
             detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)}MB"
         )
-    
+
     # Generate unique filename
     unique_filename = generate_unique_filename(file.filename or "image.jpg")
     file_path = os.path.join(IMAGES_DIR, unique_filename)
-    
+
     # Save file
     try:
         with open(file_path, "wb") as f:
             f.write(content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
-    
+
     # Return the URL
     # Use request.base_url to return an absolute URL
     base_url = str(request.base_url).rstrip("/")
     image_url = f"{base_url}/uploads/images/{unique_filename}"
-    
+
     return {
         "success": True,
         "url": image_url,
@@ -100,12 +99,13 @@ async def delete_image(
 ):
     """Delete an uploaded image"""
     file_path = os.path.join(IMAGES_DIR, filename)
-    
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Image not found")
-    
+
     try:
         os.remove(file_path)
         return {"success": True, "message": "Image deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+

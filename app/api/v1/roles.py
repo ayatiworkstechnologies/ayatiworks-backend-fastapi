@@ -2,24 +2,27 @@
 Role API endpoints.
 """
 
-from typing import Any, List
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_active_superuser, get_current_active_user
 from app.database import get_db
-from app.models.auth import Role, User, Permission, RolePermission
-from app.schemas.role import (
-    RoleCreate, RoleUpdate, RoleResponse,
-    RoleWithPermissions, RolePermissionUpdate, RoleListResponse
-)
+from app.models.auth import Permission, Role, RolePermission, User
 from app.schemas.common import MessageResponse
-from app.api.deps import get_current_active_user, get_current_active_superuser
+from app.schemas.role import (
+    RoleCreate,
+    RolePermissionUpdate,
+    RoleResponse,
+    RoleUpdate,
+    RoleWithPermissions,
+)
 
 router = APIRouter()
 
 
-@router.get("", response_model=List[RoleResponse])
+@router.get("", response_model=list[RoleResponse])
 def list_roles(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -49,14 +52,14 @@ def get_role(
             status_code=404,
             detail="Role not found",
         )
-    
+
     # Get permissions
     role_perms = db.query(RolePermission).filter(RolePermission.role_id == role.id).all()
     permissions = []
     for rp in role_perms:
         if rp.permission:
             permissions.append(rp.permission)
-    
+
     # Build response
     role_dict = {
         "id": role.id,
@@ -72,7 +75,7 @@ def get_role(
         "permissions": permissions,
         "permission_count": len(permissions)
     }
-    
+
     return role_dict
 
 
@@ -92,14 +95,14 @@ def create_role(
             status_code=400,
             detail="The role with this code already exists.",
         )
-    
+
     # Create role
     role_data = role_in.model_dump(exclude={"permission_ids"})
     role = Role(**role_data, is_system=False, is_active=True)
     db.add(role)
     db.commit()
     db.refresh(role)
-    
+
     # Assign permissions if provided
     if role_in.permission_ids:
         for pid in role_in.permission_ids:
@@ -110,7 +113,7 @@ def create_role(
                 db.add(rp)
         db.commit()
         db.refresh(role)
-        
+
     return role
 
 
@@ -131,11 +134,11 @@ def update_role(
             status_code=404,
             detail="Role not found",
         )
-    
+
     update_data = role_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(role, field, value)
-        
+
     db.add(role)
     db.commit()
     db.refresh(role)
@@ -158,7 +161,7 @@ def update_role_permissions(
             status_code=404,
             detail="Role not found",
         )
-    
+
     # Add permissions
     added_count = 0
     if perm_update.add_permission_ids:
@@ -168,7 +171,7 @@ def update_role_permissions(
                 RolePermission.role_id == role.id,
                 RolePermission.permission_id == pid
             ).first()
-            
+
             if not existing:
                 # Verify permission exists
                 perm = db.query(Permission).filter(Permission.id == pid).first()
@@ -176,7 +179,7 @@ def update_role_permissions(
                     rp = RolePermission(role_id=role.id, permission_id=pid)
                     db.add(rp)
                     added_count += 1
-    
+
     # Remove permissions
     removed_count = 0
     if perm_update.remove_permission_ids:
@@ -186,9 +189,9 @@ def update_role_permissions(
                 RolePermission.permission_id == pid
             ).delete()
             removed_count += deleted
-    
+
     db.commit()
-    
+
     return MessageResponse(
         message=f"Updated permissions for role '{role.name}': {added_count} added, {removed_count} removed"
     )
@@ -210,14 +213,14 @@ def delete_role(
             status_code=404,
             detail="Role not found",
         )
-    
+
     # Prevent deletion of system roles
     if role.is_system:
         raise HTTPException(
             status_code=400,
             detail="Cannot delete system roles. System roles are: SUPER_ADMIN, ADMIN, EMPLOYEE, CLIENT.",
         )
-    
+
     # Check if role is assigned to any users
     users_with_role = db.query(User).filter(User.role_id == role.id).count()
     if users_with_role > 0:
@@ -225,9 +228,10 @@ def delete_role(
             status_code=400,
             detail=f"Cannot delete role. It is assigned to {users_with_role} user(s). Please reassign those users first.",
         )
-    
+
     # Delete the role (cascade will delete role_permissions)
     db.delete(role)
     db.commit()
-    
+
     return MessageResponse(message=f"Role '{role.name}' deleted successfully")
+

@@ -3,11 +3,10 @@ Database connection and session management.
 """
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from app.config import settings
-
 
 # Create SQLAlchemy engine
 engine = create_engine(
@@ -49,3 +48,4 @@ def init_db():
     # Import all models here to ensure they're registered with Base
     import app.models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+

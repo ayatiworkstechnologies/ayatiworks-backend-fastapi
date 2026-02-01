@@ -6,29 +6,29 @@ Aggregates all API route modules.
 from fastapi import APIRouter
 
 from app.api.v1 import (
-    auth, 
-    employees, 
     attendance,
-    companies,
-    organizations,
-    teams,
-    shifts,
-    leaves,
-    user_management,
-    settings,
-    projects,
-    clients,
-    invoices,
+    auth,
     blogs,
-    notifications,
-    reports,
-    permissions,
-    roles,
+    clients,
+    companies,
     dashboard,
-    public,
+    employees,
+    invoices,
     leads,
+    leaves,
     meta,
-    uploads
+    notifications,
+    organizations,
+    permissions,
+    projects,
+    public,
+    reports,
+    roles,
+    settings,
+    shifts,
+    teams,
+    uploads,
+    user_management,
 )
 
 # Create main v1 router
@@ -78,4 +78,5 @@ router.include_router(settings.router)
 # ============== Access Control ==============
 router.include_router(permissions.router, prefix="/permissions", tags=["permissions"])
 router.include_router(roles.router, prefix="/roles", tags=["roles"])
+
 

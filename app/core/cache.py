@@ -3,11 +3,11 @@ Redis cache service.
 Provides caching layer for frequently accessed data.
 """
 
-import json
 import hashlib
-from typing import Optional, Any, Callable
+import json
+from collections.abc import Callable
 from functools import wraps
-from datetime import timedelta
+from typing import Any
 
 try:
     import redis
@@ -23,20 +23,20 @@ class CacheService:
     Redis-based caching service.
     Falls back to no-op if Redis is not available.
     """
-    
+
     def __init__(self):
-        self._client: Optional[redis.Redis] = None
+        self._client: redis.Redis | None = None
         self._connected = False
-        
+
     def connect(self) -> bool:
         """Connect to Redis server."""
         if not REDIS_AVAILABLE:
             return False
-            
+
         redis_url = getattr(settings, 'REDIS_URL', None)
         if not redis_url:
             return False
-            
+
         try:
             self._client = redis.from_url(
                 redis_url,
@@ -51,13 +51,13 @@ class CacheService:
             print(f"Redis connection failed: {e}")
             self._connected = False
             return False
-    
+
     @property
     def is_connected(self) -> bool:
         """Check if Redis is connected."""
         return self._connected and self._client is not None
-    
-    def get(self, key: str) -> Optional[Any]:
+
+    def get(self, key: str) -> Any | None:
         """Get value from cache."""
         if not self.is_connected:
             return None
@@ -68,7 +68,7 @@ class CacheService:
             return None
         except Exception:
             return None
-    
+
     def set(
         self,
         key: str,
@@ -87,7 +87,7 @@ class CacheService:
             return True
         except Exception:
             return False
-    
+
     def delete(self, key: str) -> bool:
         """Delete key from cache."""
         if not self.is_connected:
@@ -97,7 +97,7 @@ class CacheService:
             return True
         except Exception:
             return False
-    
+
     def delete_pattern(self, pattern: str) -> int:
         """Delete all keys matching pattern."""
         if not self.is_connected:
@@ -109,7 +109,7 @@ class CacheService:
             return 0
         except Exception:
             return 0
-    
+
     def clear_all(self) -> bool:
         """Clear all cache (use with caution)."""
         if not self.is_connected:
@@ -134,11 +134,11 @@ def cache_key(*args, **kwargs) -> str:
 def cached(
     prefix: str,
     ttl_seconds: int = 300,
-    key_builder: Optional[Callable] = None
+    key_builder: Callable | None = None
 ):
     """
     Decorator to cache function results.
-    
+
     Usage:
         @cached("user", ttl_seconds=60)
         def get_user(user_id: int):
@@ -148,69 +148,61 @@ def cached(
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
             # Build cache key
-            if key_builder:
-                key_suffix = key_builder(*args, **kwargs)
-            else:
-                key_suffix = cache_key(*args, **kwargs)
-            
+            key_suffix = key_builder(*args, **kwargs) if key_builder else cache_key(*args, **kwargs)
+
             full_key = f"{prefix}:{func.__name__}:{key_suffix}"
-            
+
             # Try cache first
             cached_value = cache_service.get(full_key)
             if cached_value is not None:
                 return cached_value
-            
+
             # Execute function
             result = await func(*args, **kwargs)
-            
+
             # Cache result
             cache_service.set(full_key, result, ttl_seconds)
-            
+
             return result
-        
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             # Build cache key
-            if key_builder:
-                key_suffix = key_builder(*args, **kwargs)
-            else:
-                key_suffix = cache_key(*args, **kwargs)
-            
+            key_suffix = key_builder(*args, **kwargs) if key_builder else cache_key(*args, **kwargs)
+
             full_key = f"{prefix}:{func.__name__}:{key_suffix}"
-            
+
             # Try cache first
             cached_value = cache_service.get(full_key)
             if cached_value is not None:
                 return cached_value
-            
+
             # Execute function
             result = func(*args, **kwargs)
-            
+
             # Cache result
             cache_service.set(full_key, result, ttl_seconds)
-            
+
             return result
-        
+
         # Return appropriate wrapper based on function type
         import asyncio
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
-    
+
     return decorator
 
 
-def invalidate_cache(prefix: str, func_name: Optional[str] = None):
+def invalidate_cache(prefix: str, func_name: str | None = None):
     """
     Invalidate cached data.
-    
+
     Usage:
         invalidate_cache("user")  # Clear all user cache
         invalidate_cache("user", "get_user")  # Clear specific function cache
     """
-    if func_name:
-        pattern = f"{prefix}:{func_name}:*"
-    else:
-        pattern = f"{prefix}:*"
-    
+    pattern = f'{prefix}:{func_name}:*' if func_name else f'{prefix}:*'
+
     return cache_service.delete_pattern(pattern)
+

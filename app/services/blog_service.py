@@ -1,14 +1,18 @@
-from typing import List, Optional, Tuple
 from datetime import datetime
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
 
-from app.models.blog import Blog, BlogCategory, BlogAuthor, Page, CaseStudy
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from app.models.blog import Blog, BlogAuthor, BlogCategory
 from app.schemas.blog import (
-    BlogCreate, BlogUpdate,
-    BlogCategoryCreate, BlogCategoryUpdate,
-    BlogAuthorCreate, BlogAuthorUpdate
+    BlogAuthorCreate,
+    BlogAuthorUpdate,
+    BlogCategoryCreate,
+    BlogCategoryUpdate,
+    BlogCreate,
+    BlogUpdate,
 )
+
 
 class BlogService:
     def __init__(self, db: Session):
@@ -18,13 +22,13 @@ class BlogService:
 
     def get_all_blogs(
         self,
-        category_id: Optional[int] = None,
-        author_id: Optional[int] = None,
-        status: Optional[str] = None,
-        search: Optional[str] = None,
+        category_id: int | None = None,
+        author_id: int | None = None,
+        status: str | None = None,
+        search: str | None = None,
         page: int = 1,
         page_size: int = 20
-    ) -> Tuple[List[Blog], int]:
+    ) -> tuple[list[Blog], int]:
         query = self.db.query(Blog).filter(Blog.is_deleted == False)
 
         if category_id:
@@ -48,20 +52,20 @@ class BlogService:
             .all()
         return blogs, total
 
-    def get_blog_by_id(self, blog_id: int) -> Optional[Blog]:
+    def get_blog_by_id(self, blog_id: int) -> Blog | None:
         # Use simple get to avoid potential joinedload issues with bad data
         blog = self.db.get(Blog, blog_id)
         if blog and not blog.is_deleted:
             return blog
         return None
 
-    def get_blog_by_slug(self, slug: str, only_published: bool = True) -> Optional[Blog]:
+    def get_blog_by_slug(self, slug: str, only_published: bool = True) -> Blog | None:
         query = self.db.query(Blog).filter(Blog.slug == slug, Blog.is_deleted == False)
         if only_published:
             query = query.filter(Blog.status == "published")
         return query.first()
 
-    def get_blog_by_slug_and_category(self, slug: str, category_id: int, only_published: bool = True) -> Optional[Blog]:
+    def get_blog_by_slug_and_category(self, slug: str, category_id: int, only_published: bool = True) -> Blog | None:
         """Get blog by slug within a specific category."""
         query = self.db.query(Blog).filter(
             Blog.slug == slug,
@@ -74,13 +78,13 @@ class BlogService:
 
     def create_blog(self, data: BlogCreate, author_id: int) -> Blog:
         blog = Blog(
-            **data.model_dump(exclude={"tags"}),
+            **data.model_dump(exclude={"tags", "author_id"}),
             author_id=author_id,
             created_by=author_id
         )
         if data.status == "published":
             blog.published_at = datetime.utcnow()
-        
+
         if data.tags:
             blog.tags = data.tags
 
@@ -89,13 +93,13 @@ class BlogService:
         self.db.refresh(blog)
         return blog
 
-    def update_blog(self, blog_id: int, data: BlogUpdate, updated_by: int) -> Optional[Blog]:
+    def update_blog(self, blog_id: int, data: BlogUpdate, updated_by: int) -> Blog | None:
         blog = self.get_blog_by_id(blog_id)
         if not blog:
             return None
 
         update_data = data.model_dump(exclude_unset=True)
-        
+
         # Handle status change to published
         if "status" in update_data and update_data["status"] == "published" and blog.status != "published":
             blog.published_at = datetime.utcnow()
@@ -112,7 +116,7 @@ class BlogService:
         blog = self.get_blog_by_id(blog_id)
         if not blog:
             return False
-        
+
         blog.is_deleted = True
         blog.deleted_at = datetime.utcnow()
         blog.deleted_by = deleted_by
@@ -128,14 +132,14 @@ class BlogCategoryService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self) -> List[BlogCategory]:
+    def get_all(self) -> list[BlogCategory]:
         return self.db.query(BlogCategory).filter(BlogCategory.is_deleted == False)\
             .order_by(BlogCategory.order).all()
 
-    def get_by_id(self, category_id: int) -> Optional[BlogCategory]:
+    def get_by_id(self, category_id: int) -> BlogCategory | None:
         return self.db.query(BlogCategory).filter(BlogCategory.id == category_id, BlogCategory.is_deleted == False).first()
 
-    def get_category_by_slug(self, slug: str) -> Optional[BlogCategory]:
+    def get_category_by_slug(self, slug: str) -> BlogCategory | None:
         """Get category by slug."""
         return self.db.query(BlogCategory).filter(
             BlogCategory.slug == slug,
@@ -152,7 +156,7 @@ class BlogCategoryService:
         self.db.refresh(category)
         return category
 
-    def update(self, category_id: int, data: BlogCategoryUpdate, updated_by: int) -> Optional[BlogCategory]:
+    def update(self, category_id: int, data: BlogCategoryUpdate, updated_by: int) -> BlogCategory | None:
         category = self.get_by_id(category_id)
         if not category:
             return None
@@ -169,7 +173,7 @@ class BlogCategoryService:
         category = self.get_by_id(category_id)
         if not category:
             return False
-        
+
         category.is_deleted = True
         category.deleted_at = datetime.utcnow()
         category.deleted_by = deleted_by
@@ -181,13 +185,13 @@ class BlogAuthorService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self) -> List[BlogAuthor]:
+    def get_all(self) -> list[BlogAuthor]:
         return self.db.query(BlogAuthor).filter(BlogAuthor.is_deleted == False).all()
 
-    def get_by_id(self, author_id: int) -> Optional[BlogAuthor]:
+    def get_by_id(self, author_id: int) -> BlogAuthor | None:
         return self.db.query(BlogAuthor).filter(BlogAuthor.id == author_id, BlogAuthor.is_deleted == False).first()
 
-    def get_by_user_id(self, user_id: int) -> Optional[BlogAuthor]:
+    def get_by_user_id(self, user_id: int) -> BlogAuthor | None:
         return self.db.query(BlogAuthor).filter(BlogAuthor.user_id == user_id, BlogAuthor.is_deleted == False).first()
 
     def create(self, data: BlogAuthorCreate, created_by: int) -> BlogAuthor:
@@ -200,7 +204,7 @@ class BlogAuthorService:
         self.db.refresh(author)
         return author
 
-    def update(self, author_id: int, data: BlogAuthorUpdate, updated_by: int) -> Optional[BlogAuthor]:
+    def update(self, author_id: int, data: BlogAuthorUpdate, updated_by: int) -> BlogAuthor | None:
         author = self.get_by_id(author_id)
         if not author:
             return None
@@ -217,9 +221,10 @@ class BlogAuthorService:
         author = self.get_by_id(author_id)
         if not author:
             return False
-        
+
         author.is_deleted = True
         author.deleted_at = datetime.utcnow()
         author.deleted_by = deleted_by
         self.db.commit()
         return True
+

@@ -2,33 +2,24 @@
 Notifications API routes.
 """
 
-from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import PermissionChecker, get_current_active_user
+from app.core.exceptions import ResourceNotFoundError
 from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker
 from app.models.auth import User
-from app.models.notification import Notification, Announcement, AnnouncementRead
-from app.schemas.common import PaginatedResponse, MessageResponse
-from app.core.exceptions import (
-    ResourceNotFoundError,
-    ResourceAlreadyExistsError,
-    InvalidCredentialsError,
-    PermissionDeniedError,
-    ValidationError,
-    BusinessLogicError
-)
-
+from app.models.notification import Announcement, AnnouncementRead, Notification
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 @router.get("")
 async def list_notifications(
-    is_read: Optional[bool] = None,
-    category: Optional[str] = None,
+    is_read: bool | None = None,
+    category: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_active_user),
@@ -39,23 +30,23 @@ async def list_notifications(
         Notification.user_id == current_user.id,
         Notification.is_deleted == False
     )
-    
+
     if is_read is not None:
         query = query.filter(Notification.is_read == is_read)
-    
+
     if category:
         query = query.filter(Notification.category == category)
-    
+
     total = query.count()
     unread_count = db.query(Notification).filter(
         Notification.user_id == current_user.id,
         Notification.is_read == False,
         Notification.is_deleted == False
     ).count()
-    
+
     offset = (page - 1) * page_size
     notifications = query.order_by(Notification.created_at.desc()).offset(offset).limit(page_size).all()
-    
+
     return {
         "items": [
             {
@@ -88,14 +79,14 @@ async def mark_as_read(
         Notification.id == notification_id,
         Notification.user_id == current_user.id
     ).first()
-    
+
     if not notification:
-        raise ResourceNotFoundError("Notification", Notification_id)
-    
+        raise ResourceNotFoundError("Notification", notification_id)
+
     notification.is_read = True
     notification.read_at = datetime.utcnow()
     db.commit()
-    
+
     return {"message": "Marked as read"}
 
 
@@ -109,9 +100,9 @@ async def mark_all_as_read(
         Notification.user_id == current_user.id,
         Notification.is_read == False
     ).update({"is_read": True, "read_at": datetime.utcnow()})
-    
+
     db.commit()
-    
+
     return {"message": "All notifications marked as read"}
 
 
@@ -126,13 +117,13 @@ async def delete_notification(
         Notification.id == notification_id,
         Notification.user_id == current_user.id
     ).first()
-    
+
     if not notification:
-        raise ResourceNotFoundError("Notification", Notification_id)
-    
+        raise ResourceNotFoundError("Notification", notification_id)
+
     notification.is_deleted = True
     db.commit()
-    
+
     return {"message": "Notification deleted"}
 
 
@@ -145,37 +136,37 @@ async def list_announcements(
 ):
     """List active announcements for current user."""
     now = datetime.utcnow()
-    
+
     query = db.query(Announcement).filter(
         Announcement.status == "published",
         Announcement.is_deleted == False
     )
-    
+
     # Filter by date
     query = query.filter(
-        (Announcement.start_date == None) | (Announcement.start_date <= now)
+        (Announcement.start_date is None) | (Announcement.start_date <= now)
     ).filter(
-        (Announcement.end_date == None) | (Announcement.end_date >= now)
+        (Announcement.end_date is None) | (Announcement.end_date >= now)
     )
-    
+
     # Filter by scope
     query = query.filter(
         (Announcement.target_scope == "all") |
         ((Announcement.target_scope == "company") & (Announcement.company_id == current_user.company_id))
     )
-    
+
     announcements = query.order_by(
         Announcement.is_pinned.desc(),
         Announcement.published_at.desc()
     ).limit(20).all()
-    
+
     # Get read status
-    read_ids = set(
+    read_ids = {
         r.announcement_id for r in db.query(AnnouncementRead).filter(
             AnnouncementRead.user_id == current_user.id
         ).all()
-    )
-    
+    }
+
     return [
         {
             "id": a.id,
@@ -201,7 +192,7 @@ async def mark_announcement_read(
         AnnouncementRead.announcement_id == announcement_id,
         AnnouncementRead.user_id == current_user.id
     ).first()
-    
+
     if not existing:
         read = AnnouncementRead(
             announcement_id=announcement_id,
@@ -209,7 +200,7 @@ async def mark_announcement_read(
         )
         db.add(read)
         db.commit()
-    
+
     return {"message": "Marked as read"}
 
 
@@ -235,9 +226,10 @@ async def create_announcement(
         published_at=datetime.utcnow(),
         created_by=current_user.id
     )
-    
+
     db.add(announcement)
     db.commit()
     db.refresh(announcement)
-    
+
     return {"id": announcement.id, "message": "Announcement created"}
+

@@ -2,30 +2,21 @@
 Reports and Dashboard API routes.
 """
 
-from typing import Optional
-from datetime import date, datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from datetime import date
 
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.api.deps import PermissionChecker, get_current_active_user
 from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker
+from app.models.attendance import Attendance
 from app.models.auth import User
 from app.models.employee import Employee
-from app.models.attendance import Attendance
 from app.models.leave import Leave
 from app.models.project import Project, Task
-from app.models.report import Report, Dashboard
+from app.models.report import Report
 from app.services.employee_service import EmployeeService
-from app.core.exceptions import (
-    ResourceNotFoundError,
-    ResourceAlreadyExistsError,
-    InvalidCredentialsError,
-    PermissionDeniedError,
-    ValidationError,
-    BusinessLogicError
-)
-
 
 router = APIRouter(tags=["Reports & Dashboard"])
 
@@ -41,60 +32,60 @@ async def get_report_dashboard_stats(
     """Get dashboard statistics for current user."""
     emp_service = EmployeeService(db)
     employee = emp_service.get_by_user_id(current_user.id)
-    
+
     today = date.today()
-    
+
     # Quick stats
     stats = {}
-    
+
     if employee:
         # Today's attendance
         today_attendance = db.query(Attendance).filter(
             Attendance.employee_id == employee.id,
             Attendance.date == today
         ).first()
-        
+
         stats["attendance_today"] = {
             "checked_in": today_attendance.check_in is not None if today_attendance else False,
             "checked_out": today_attendance.check_out is not None if today_attendance else False,
             "check_in_time": today_attendance.check_in if today_attendance else None,
             "check_out_time": today_attendance.check_out if today_attendance else None
         }
-        
+
         # Pending leaves
         pending_leaves = db.query(Leave).filter(
             Leave.employee_id == employee.id,
             Leave.status == "pending"
         ).count()
-        
+
         stats["pending_leaves"] = pending_leaves
-        
+
         # My tasks
         my_tasks = db.query(Task).filter(
             Task.assignee_id == employee.id,
             Task.status.notin_(["done", "cancelled"]),
             Task.is_deleted == False
         ).count()
-        
+
         stats["active_tasks"] = my_tasks
-    
+
     # Team stats for managers
     if employee and employee.manager_id is None:  # If user is a manager
         team_count = db.query(Employee).filter(
             Employee.manager_id == employee.id,
             Employee.is_deleted == False
         ).count()
-        
+
         stats["team_size"] = team_count
-        
+
         # Pending approvals
         pending_leave_approvals = db.query(Leave).join(Employee).filter(
             Employee.manager_id == employee.id,
             Leave.status == "pending"
         ).count()
-        
+
         stats["pending_approvals"] = pending_leave_approvals
-    
+
     return stats
 
 
@@ -110,31 +101,31 @@ async def get_attendance_overview(
         from_date = date.today()
     if not to_date:
         to_date = date.today()
-    
+
     # Get counts by status
     present = db.query(Attendance).filter(
         Attendance.date >= from_date,
         Attendance.date <= to_date,
         Attendance.status == "present"
     ).count()
-    
+
     late = db.query(Attendance).filter(
         Attendance.date >= from_date,
         Attendance.date <= to_date,
         Attendance.is_late == True
     ).count()
-    
+
     wfh = db.query(Attendance).filter(
         Attendance.date >= from_date,
         Attendance.date <= to_date,
         Attendance.work_mode == "wfh"
     ).count()
-    
+
     total_employees = db.query(Employee).filter(
         Employee.is_deleted == False,
         Employee.is_active == True
     ).count()
-    
+
     return {
         "total_employees": total_employees,
         "present": present,
@@ -155,14 +146,14 @@ async def get_project_overview(
         Project.status,
         func.count(Project.id)
     ).filter(Project.is_deleted == False).group_by(Project.status).all()
-    
-    status_counts = {s: c for s, c in by_status}
-    
+
+    status_counts = dict(by_status)
+
     # Recent projects
     recent = db.query(Project).filter(
         Project.is_deleted == False
     ).order_by(Project.created_at.desc()).limit(5).all()
-    
+
     return {
         "by_status": status_counts,
         "total": sum(status_counts.values()),
@@ -183,7 +174,7 @@ async def get_project_overview(
 
 @router.get("/reports")
 async def list_reports(
-    report_type: Optional[str] = None,
+    report_type: str | None = None,
     current_user: User = Depends(PermissionChecker("report.view")),
     db: Session = Depends(get_db)
 ):
@@ -192,12 +183,12 @@ async def list_reports(
         Report.is_deleted == False,
         (Report.owner_id == current_user.id) | (Report.is_public == True)
     )
-    
+
     if report_type:
         query = query.filter(Report.report_type == report_type)
-    
+
     reports = query.order_by(Report.name).all()
-    
+
     return [
         {
             "id": r.id,
@@ -217,8 +208,8 @@ async def create_report(
     name: str,
     report_type: str,
     config: dict,
-    description: Optional[str] = None,
-    chart_type: Optional[str] = None,
+    description: str | None = None,
+    chart_type: str | None = None,
     is_public: bool = False,
     current_user: User = Depends(PermissionChecker("report.create")),
     db: Session = Depends(get_db)
@@ -235,11 +226,11 @@ async def create_report(
         company_id=current_user.company_id,
         created_by=current_user.id
     )
-    
+
     db.add(report)
     db.commit()
     db.refresh(report)
-    
+
     return {"id": report.id, "message": "Report created"}
 
 
@@ -247,8 +238,8 @@ async def create_report(
 async def generate_attendance_report(
     from_date: date = Query(...),
     to_date: date = Query(...),
-    department_id: Optional[int] = None,
-    employee_id: Optional[int] = None,
+    department_id: int | None = None,
+    employee_id: int | None = None,
     current_user: User = Depends(PermissionChecker("report.view")),
     db: Session = Depends(get_db)
 ):
@@ -265,21 +256,21 @@ async def generate_attendance_report(
         Attendance.date <= to_date,
         Attendance.is_deleted == False
     )
-    
+
     if department_id:
         query = query.filter(Employee.department_id == department_id)
-    
+
     if employee_id:
         query = query.filter(Attendance.employee_id == employee_id)
-    
+
     query = query.group_by(Attendance.employee_id)
-    
+
     results = query.all()
-    
+
     # Get employee details
     emp_ids = [r[0] for r in results]
     employees = {e.id: e for e in db.query(Employee).filter(Employee.id.in_(emp_ids)).all()}
-    
+
     return {
         "from_date": from_date,
         "to_date": to_date,
@@ -302,7 +293,7 @@ async def generate_attendance_report(
 @router.get("/reports/leave")
 async def generate_leave_report(
     year: int = Query(...),
-    department_id: Optional[int] = None,
+    department_id: int | None = None,
     current_user: User = Depends(PermissionChecker("report.view")),
     db: Session = Depends(get_db)
 ):
@@ -316,14 +307,14 @@ async def generate_leave_report(
         Leave.status == "approved",
         Leave.is_deleted == False
     )
-    
+
     if department_id:
         query = query.filter(Employee.department_id == department_id)
-    
+
     query = query.group_by(Leave.employee_id, Leave.leave_type_id)
-    
+
     results = query.all()
-    
+
     return {
         "year": year,
         "data": [
@@ -335,3 +326,4 @@ async def generate_leave_report(
             for r in results
         ]
     }
+

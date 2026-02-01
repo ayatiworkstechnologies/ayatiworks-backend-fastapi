@@ -3,39 +3,39 @@ Notification service.
 Creates in-app notifications and optionally sends emails.
 """
 
+import logging
 from datetime import datetime
-from typing import Optional
+
 from sqlalchemy.orm import Session
 
-from app.models.notification import Notification
 from app.models.auth import User
+from app.models.notification import Notification
 from app.services.email_service import email_service, generic_notification_email
-import logging
 
 logger = logging.getLogger(__name__)
 
 
 class NotificationService:
     """Service for creating and managing notifications."""
-    
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     def create(
         self,
         user_id: int,
         title: str,
         message: str,
         notification_type: str = "info",
-        category: Optional[str] = None,
-        link: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        entity_id: Optional[int] = None,
+        category: str | None = None,
+        link: str | None = None,
+        entity_type: str | None = None,
+        entity_id: int | None = None,
         send_email: bool = False
     ) -> Notification:
         """
         Create a notification for a user.
-        
+
         Args:
             user_id: Target user ID
             title: Notification title
@@ -46,7 +46,7 @@ class NotificationService:
             entity_type: Related entity type
             entity_id: Related entity ID
             send_email: Whether to also send an email
-            
+
         Returns:
             Created Notification object
         """
@@ -60,18 +60,18 @@ class NotificationService:
             entity_type=entity_type,
             entity_id=entity_id
         )
-        
+
         self.db.add(notification)
         self.db.commit()
         self.db.refresh(notification)
-        
+
         # Send email if requested
         if send_email:
             self._send_notification_email(user_id, title, message, link)
-        
+
         return notification
-    
-    def _send_notification_email(self, user_id: int, title: str, message: str, link: Optional[str] = None):
+
+    def _send_notification_email(self, user_id: int, title: str, message: str, link: str | None = None):
         """Send email notification to user."""
         try:
             user = self.db.query(User).filter(User.id == user_id).first()
@@ -89,7 +89,7 @@ class NotificationService:
                 )
         except Exception as e:
             logger.error(f"Failed to send notification email: {e}")
-    
+
     def notify_employee_created(self, employee, created_by_name: str):
         """Send notification when employee is created."""
         if employee.manager_id:
@@ -104,7 +104,7 @@ class NotificationService:
                 entity_id=employee.id,
                 send_email=True
             ) if employee.manager else None
-    
+
     def notify_task_assigned(
         self,
         assignee_user_id: int,
@@ -113,11 +113,11 @@ class NotificationService:
         assigned_by: str,
         priority: str,
         task_id: int,
-        due_date: Optional[str] = None
+        due_date: str | None = None
     ):
         """Send notification when task is assigned."""
         from app.services.email_service import task_assigned_email
-        
+
         # Create in-app notification
         notification = self.create(
             user_id=assignee_user_id,
@@ -129,7 +129,7 @@ class NotificationService:
             entity_id=task_id,
             send_email=False  # We'll send custom email
         )
-        
+
         # Send custom task email
         try:
             user = self.db.query(User).filter(User.id == assignee_user_id).first()
@@ -149,9 +149,9 @@ class NotificationService:
                 )
         except Exception as e:
             logger.error(f"Failed to send task assignment email: {e}")
-        
+
         return notification
-    
+
     def notify_leave_request(
         self,
         manager_user_id: int,
@@ -161,11 +161,11 @@ class NotificationService:
         end_date: str,
         days: int,
         leave_id: int,
-        reason: Optional[str] = None
+        reason: str | None = None
     ):
         """Send notification for leave request."""
         from app.services.email_service import leave_request_email
-        
+
         # Create in-app notification
         notification = self.create(
             user_id=manager_user_id,
@@ -177,7 +177,7 @@ class NotificationService:
             entity_id=leave_id,
             send_email=False
         )
-        
+
         # Send custom email
         try:
             manager = self.db.query(User).filter(User.id == manager_user_id).first()
@@ -198,9 +198,9 @@ class NotificationService:
                 )
         except Exception as e:
             logger.error(f"Failed to send leave request email: {e}")
-        
+
         return notification
-    
+
     def notify_leave_status(
         self,
         employee_user_id: int,
@@ -209,14 +209,14 @@ class NotificationService:
         end_date: str,
         status: str,
         leave_id: int,
-        approved_by: Optional[str] = None,
-        remarks: Optional[str] = None
+        approved_by: str | None = None,
+        remarks: str | None = None
     ):
         """Send notification for leave status update."""
         from app.services.email_service import leave_status_email
-        
+
         status_type = "success" if status.lower() == "approved" else "error"
-        
+
         # Create in-app notification
         notification = self.create(
             user_id=employee_user_id,
@@ -228,7 +228,7 @@ class NotificationService:
             entity_id=leave_id,
             send_email=False
         )
-        
+
         # Send email
         try:
             user = self.db.query(User).filter(User.id == employee_user_id).first()
@@ -249,23 +249,23 @@ class NotificationService:
                 )
         except Exception as e:
             logger.error(f"Failed to send leave status email: {e}")
-        
+
         return notification
-    
+
     def mark_as_read(self, notification_id: int, user_id: int) -> bool:
         """Mark a notification as read."""
         notification = self.db.query(Notification).filter(
             Notification.id == notification_id,
             Notification.user_id == user_id
         ).first()
-        
+
         if notification:
             notification.is_read = True
             notification.read_at = datetime.utcnow()
             self.db.commit()
             return True
         return False
-    
+
     def mark_all_as_read(self, user_id: int) -> int:
         """Mark all notifications as read for a user."""
         result = self.db.query(Notification).filter(
@@ -277,10 +277,11 @@ class NotificationService:
         })
         self.db.commit()
         return result
-    
+
     def get_unread_count(self, user_id: int) -> int:
         """Get count of unread notifications."""
         return self.db.query(Notification).filter(
             Notification.user_id == user_id,
             Notification.is_read == False
         ).count()
+

@@ -2,39 +2,35 @@
 Team API routes.
 """
 
-from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import PermissionChecker
+from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError
 from app.database import get_db
-from app.api.deps import get_current_active_user, PermissionChecker
 from app.models.auth import User
-from app.services.team_service import TeamService
+from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.team import (
-    TeamCreate, TeamUpdate, TeamResponse, TeamListResponse,
-    TeamMemberCreate, TeamMemberResponse
+    TeamCreate,
+    TeamListResponse,
+    TeamMemberCreate,
+    TeamMemberResponse,
+    TeamResponse,
+    TeamUpdate,
 )
-from app.schemas.common import PaginatedResponse, MessageResponse
-from app.core.exceptions import (
-    ResourceNotFoundError,
-    ResourceAlreadyExistsError,
-    InvalidCredentialsError,
-    PermissionDeniedError,
-    ValidationError,
-    BusinessLogicError
-)
-
+from app.services.team_service import TeamService
 
 router = APIRouter(tags=["Teams"])
 
 
 @router.get("", response_model=PaginatedResponse[TeamListResponse])
 async def list_teams(
-    company_id: Optional[int] = None,
-    department_id: Optional[int] = None,
-    team_type: Optional[str] = None,
-    search: Optional[str] = None,
-    is_active: Optional[bool] = None,
+    company_id: int | None = None,
+    department_id: int | None = None,
+    team_type: str | None = None,
+    search: str | None = None,
+    is_active: bool | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(PermissionChecker("team.view")),
@@ -42,13 +38,13 @@ async def list_teams(
 ):
     """List all teams."""
     service = TeamService(db)
-    
+
     # Use user's company_id if not provided (typical for multi-tenant)
     # Assuming user model has company_id
     effective_company_id = company_id
     if effective_company_id is None and hasattr(current_user, 'company_id'):
         effective_company_id = current_user.company_id
-        
+
     if effective_company_id is None:
         # Fallback or error if strictly multi-tenant
         # For now, let's assume it's required or handle in service if allowed
@@ -64,7 +60,7 @@ async def list_teams(
         page=page,
         page_size=page_size
     )
-    
+
     # Enhance response with member counts and names
     items = []
     for team in teams:
@@ -75,7 +71,7 @@ async def list_teams(
         if team.department:
             item.department_name = team.department.name
         items.append(item)
-    
+
     return PaginatedResponse.create(items, total, page, page_size)
 
 
@@ -88,23 +84,23 @@ async def get_team(
     """Get team by ID."""
     service = TeamService(db)
     team = service.get_by_id(team_id)
-    
+
     if not team:
-        raise ResourceNotFoundError("Team", Team_id)
-        
+        raise ResourceNotFoundError("Team", team_id)
+
     # Check access (company scope)
     if hasattr(current_user, 'company_id') and team.company_id != current_user.company_id:
         raise PermissionDeniedError("Not authorized to access this team")
-    
+
     response = TeamResponse.model_validate(team)
     response.member_count = service.get_member_count(team_id)
-    
+
     if team.team_lead:
         response.team_lead_name = f"{team.team_lead.first_name} {team.team_lead.last_name}"
-        
+
     if team.department:
         response.department_name = team.department.name
-        
+
     # Include members list
     members = service.get_members(team_id)
     member_responses = []
@@ -120,9 +116,9 @@ async def get_team(
             if m.employee.profile_picture:
                 mr.avatar = m.employee.profile_picture
         member_responses.append(mr)
-        
+
     response.members = member_responses
-    
+
     return response
 
 
@@ -134,14 +130,14 @@ async def create_team(
 ):
     """Create a new team."""
     service = TeamService(db)
-    
+
     # Check if code exists
     if service.get_by_code(data.company_id, data.code):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Team code already exists"
         )
-    
+
     team = service.create(data, created_by=current_user.id)
     return TeamResponse.model_validate(team)
 
@@ -155,12 +151,12 @@ async def update_team(
 ):
     """Update a team."""
     service = TeamService(db)
-    
+
     team = service.update(team_id, data, updated_by=current_user.id)
-    
+
     if not team:
-        raise ResourceNotFoundError("Team", Team_id)
-    
+        raise ResourceNotFoundError("Team", team_id)
+
     return TeamResponse.model_validate(team)
 
 
@@ -172,10 +168,10 @@ async def delete_team(
 ):
     """Delete a team."""
     service = TeamService(db)
-    
+
     if not service.delete(team_id):
-        raise ResourceNotFoundError("Team", Team_id)
-    
+        raise ResourceNotFoundError("Team", team_id)
+
     return MessageResponse(message="Team deleted successfully")
 
 
@@ -192,17 +188,17 @@ async def add_team_member(
 ):
     """Add a member to a team."""
     service = TeamService(db)
-    
+
     try:
         member = service.add_member(team_id, data, created_by=current_user.id)
-        
+
         # Hydrate response
         mr = TeamMemberResponse.model_validate(member)
         if member.employee:
             mr.employee_name = f"{member.employee.first_name} {member.employee.last_name}"
         return mr
-        
-    except Exception as e:
+
+    except Exception:
         # Handle duplicate constraint violation usually
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -219,11 +215,12 @@ async def remove_team_member(
 ):
     """Remove a member from a team."""
     service = TeamService(db)
-    
+
     if not service.remove_member(team_id, employee_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Member not found in this team"
         )
-    
+
     return MessageResponse(message="Member removed successfully")
+
