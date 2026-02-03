@@ -1,29 +1,27 @@
 {% extends "email/base.html" %}
 
 {% block content %}
-<h2>Two-Factor Authentication Code 🔒</h2>
+<h2>Authentication Code 🔒</h2>
 
 <p>Hi {{ user_name }},</p>
 
-<p>Your two-factor authentication code for {{ company_name }} is:</p>
+<p>Please use the following code to complete your login to {{ company_name }}.</p>
 
 <div class="info-box" style="text-align: center;">
-    <p style="font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 4px; margin: 20px 0;">
+    <p style="font-size: 32px; font-weight: 700; color: #6366f1; letter-spacing: 6px; margin: 20px 0;">
         {{ otp_code }}
     </p>
-    <p style="font-size: 13px; color: #999;">This code expires in {{ expiry_minutes }} minutes</p>
+    <p style="font-size: 13px; color: #6b7280;">Expires in {{ expiry_minutes }} minutes</p>
 </div>
 
-<p>Enter this code to complete your login.</p>
-
-<p style="color: #dc3545; margin-top: 25px;">
-    <strong>⚠️ Security Alert:</strong> If you didn't attempt to log in, please contact support immediately and change your password.
+<p style="font-size: 14px; color: #6b7280; margin-top: 24px;">
+    <strong>Login Details:</strong><br>
+    Time: {{ login_time }}<br>
+    IP: {{ ip_address }}
 </p>
 
-<p style="margin-top: 30px; font-size: 14px; color: #666;">
-    Login attempt details:<br>
-    <strong>Time:</strong> {{ login_time }}<br>
-    <strong>IP Address:</strong> {{ ip_address }}<br>
-    <strong>Device:</strong> {{ device_info }}
+<p style="margin-top: 32px;">
+    Best regards,<br>
+    <strong>The Ayatiworks Team</strong>
 </p>
 {% endblock %}

@@ -13,7 +13,7 @@
     <p><strong>From:</strong> {{ from_date }}</p>
     <p><strong>To:</strong> {{ to_date }}</p>
     <p><strong>Duration:</strong> {{ duration }} day(s)</p>
-    <p><strong>Status:</strong> <span style="color: {{ status_color }};">{{ status }}</span></p>
+    <p><strong>Status:</strong> <span style="font-weight: 600; color: {{ status_color }};">{{ status }}</span></p>
 </div>
 
 {% if reason %}
@@ -21,24 +21,30 @@
 {% endif %}
 
 {% if approver_comments %}
-<div class="info-box" style="border-left-color: {{ status_color }};">
+<div class="info-box" style="border-left: 4px solid {{ status_color }}; background-color: #f9fafb;">
     <p><strong>{{ approver_name }}'s Comments:</strong></p>
-    <p style="font-style: italic;">"{{ approver_comments }}"</p>
+    <p style="font-style: italic; color: #4b5563;">"{{ approver_comments }}"</p>
 </div>
 {% endif %}
 
 {% if status == 'Approved' %}
-<p style="color: #28a745;">✓ Your leave has been approved. Please ensure proper handover of your responsibilities.</p>
+<div style="background-color: #ecfdf5; border: 1px solid #d1fae5; color: #065f46; padding: 12px; border-radius: 6px; margin-top: 16px;">
+    ✓ Your leave has been approved. Please ensure proper handover of your responsibilities.
+</div>
 {% elif status == 'Rejected' %}
-<p style="color: #dc3545;">Your leave request was not approved. Please contact your manager for more details.</p>
+<div style="background-color: #fef2f2; border: 1px solid #fee2e2; color: #b91c1c; padding: 12px; border-radius: 6px; margin-top: 16px;">
+    Your leave request was not approved. Please contact your manager for more details.
+</div>
 {% endif %}
 
-<p><strong>Current Leave Balance:</strong></p>
-<ul style="color: #666; margin-left: 20px;">
+<p style="margin-top: 24px;"><strong>Current Leave Balance:</strong></p>
+<ul>
     {% for balance in leave_balances %}
-    <li>{{ balance.type }}: {{ balance.available }} days remaining</li>
+    <li>{{ balance.type }}: <strong>{{ balance.available }}</strong> days remaining</li>
     {% endfor %}
 </ul>
 
-<a href="{{ dashboard_url }}" class="button">View Leave Dashboard</a>
+<center>
+    <a href="{{ dashboard_url }}" class="button">View Leave Dashboard</a>
+</center>
 {% endblock %}

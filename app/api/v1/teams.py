@@ -20,6 +20,7 @@ from app.schemas.team import (
     TeamUpdate,
 )
 from app.services.team_service import TeamService
+from app.services.email_service import email_service
 
 router = APIRouter(tags=["Teams"])
 
@@ -191,6 +192,29 @@ async def add_team_member(
 
     try:
         member = service.add_member(team_id, data, created_by=current_user.id)
+
+        # Send notification to new member
+        try:
+            # Re-fetch or ensure relationships are loaded to get email
+            # member.employee might be loaded, but let's be safe
+            if member.employee and member.employee.user:
+                team = service.get_by_id(team_id)
+                team_lead_name = "N/A"
+                if team.team_lead:
+                    team_lead_name = f"{team.team_lead.first_name} {team.team_lead.last_name}"
+
+                email_service.send_team_addition_email(
+                    to_email=member.employee.user.email,
+                    employee_name=f"{member.employee.first_name} {member.employee.last_name}",
+                    team_name=team.name,
+                    department_name=team.department.name if team.department else "N/A",
+                    team_lead_name=team_lead_name,
+                    role=data.role,
+                    team_id=team_id
+                )
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to send team addition email: {e}")
 
         # Hydrate response
         mr = TeamMemberResponse.model_validate(member)

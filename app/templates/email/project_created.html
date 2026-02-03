@@ -1,0 +1,29 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h1>New Project Created 🚀</h1>
+
+<p>Hi {{ manager_name }},</p>
+
+<p>A new project has been created and assigned to you as the manager.</p>
+
+<div class="info-box">
+    <p><strong>Project Details:</strong></p>
+    <p><strong>Name:</strong> {{ project_name }}</p>
+    <p><strong>Code:</strong> {{ project_code }}</p>
+    <p><strong>Client:</strong> {{ client_name }}</p>
+    <p><strong>Start Date:</strong> {{ start_date }}</p>
+    {% if end_date %}
+    <p><strong>End Date:</strong> {{ end_date }}</p>
+    {% endif %}
+</div>
+
+<p>You can now start adding members, creating tasks, and setting up milestones.</p>
+
+<center>
+    <a href="{{ dashboard_url }}" class="button">View Project</a>
+</center>
+
+<p>Best regards,<br>
+<strong>The Ayatiworks Team</strong></p>
+{% endblock %}

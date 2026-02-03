@@ -1,0 +1,29 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h1>New Task Assigned 📋</h1>
+
+<p>Hi {{ assignee_name }},</p>
+
+<p>You have been assigned a new task in <strong>{{ project_name }}</strong>.</p>
+
+<div class="info-box">
+    <p><strong>Task Details:</strong></p>
+    <p><strong>Title:</strong> {{ task_title }}</p>
+    <p><strong>Project:</strong> {{ project_name }}</p>
+    <p><strong>Assigned By:</strong> {{ assigned_by }}</p>
+    <p><strong>Priority:</strong> {{ priority|title }}</p>
+    {% if due_date %}
+    <p><strong>Due Date:</strong> {{ due_date }}</p>
+    {% endif %}
+</div>
+
+<p>Please review the task and update its status as you make progress.</p>
+
+<center>
+    <a href="{{ dashboard_url }}" class="button">View Task</a>
+</center>
+
+<p>Best regards,<br>
+<strong>The Ayatiworks Team</strong></p>
+{% endblock %}

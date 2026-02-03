@@ -1,14 +1,14 @@
 {% extends "email/base.html" %}
 
 {% block content %}
-<h2>Welcome to {{ company_name }}! 🎉</h2>
+<h1>Welcome to {{ company_name }}! 🎉</h1>
 
 <p>Hi {{ employee_name }},</p>
 
-<p>We're thrilled to have you join our team! Your employee account has been successfully created.</p>
+<p>We're thrilled to have you join our team! Your account has been successfully created and is ready for you to access.</p>
 
 <div class="info-box">
-    <p><strong>Your Login Details:</strong></p>
+    <p><strong>Your Login Credentials:</strong></p>
     <p><strong>Email:</strong> {{ email }}</p>
     <p><strong>Employee ID:</strong> {{ employee_id }}</p>
     {% if temp_password %}
@@ -17,26 +17,22 @@
 </div>
 
 {% if temp_password %}
-<p>⚠️ <strong>Important:</strong> Please change your password after your first login for security purposes.</p>
+<p><em>For your security, please change your password immediately after logging in.</em></p>
 {% endif %}
 
-<p>Click the button below to access your account:</p>
+<center>
+    <a href="{{ login_url }}" class="button">Login to Dashboard</a>
+</center>
 
-<a href="{{ login_url }}" class="button">Login to Your Account</a>
-
-<p><strong>What's Next?</strong></p>
-<ul style="color: #666; margin-left: 20px; line-height: 1.8;">
+<h3>Getting Started</h3>
+<ul>
     <li>Complete your employee profile</li>
     <li>Review company policies and documents</li>
     <li>Set up your attendance preferences</li>
-    <li>Connect with your team members</li>
 </ul>
 
-<p>If you have any questions or need assistance, please don't hesitate to reach out to our HR team.</p>
+<p>If you have any questions, our HR team is here to help.</p>
 
-<p style="margin-top: 30px;">
-    Best regards,<br>
-    <strong>HR Team</strong><br>
-    {{ company_name }}
-</p>
+<p>Best regards,<br>
+<strong>The Ayatiworks Team</strong></p>
 {% endblock %}

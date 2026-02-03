@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>{{ title }}</title>
+    <title>Ayatiworks Notification</title>
     <style>
         /* Base Resets */
         body {
@@ -167,20 +167,61 @@
 
                 <!-- Main Content -->
                 <div class="content">
-                    {% block content %}
-                    <!-- Content will be injected here -->
-                    {% endblock %}
+                    
+<h2>Leave Request ❌</h2>
+
+<p>Hi Ruban Kumar,</p>
+
+<p>Your leave request has been <strong style="color: #dc2626;">Rejected</strong>.</p>
+
+<div class="info-box">
+    <p><strong>Leave Details:</strong></p>
+    <p><strong>Type:</strong> Sick Leave</p>
+    <p><strong>From:</strong> Feb 5, 2026</p>
+    <p><strong>To:</strong> Feb 6, 2026</p>
+    <p><strong>Duration:</strong> 2 day(s)</p>
+    <p><strong>Status:</strong> <span style="font-weight: 600; color: #dc2626;">Rejected</span></p>
+</div>
+
+
+
+
+<div class="info-box" style="border-left: 4px solid #dc2626; background-color: #f9fafb;">
+    <p><strong>'s Comments:</strong></p>
+    <p style="font-style: italic; color: #4b5563;">"Please provide a medical certificate."</p>
+</div>
+
+
+
+<div style="background-color: #fef2f2; border: 1px solid #fee2e2; color: #b91c1c; padding: 12px; border-radius: 6px; margin-top: 16px;">
+    Your leave request was not approved. Please contact your manager for more details.
+</div>
+
+
+<p style="margin-top: 24px;"><strong>Current Leave Balance:</strong></p>
+<ul>
+    
+    <li>Sick Leave: <strong>5</strong> days remaining</li>
+    
+    <li>Casual Leave: <strong>10</strong> days remaining</li>
+    
+</ul>
+
+<center>
+    <a href="http://localhost:3000/leaves" class="button">View Leave Dashboard</a>
+</center>
+
                 </div>
 
                 <!-- Footer -->
                 <div class="footer">
-                    <p>&copy; {{ current_year }} Ayatiworks Workspace. All rights reserved.</p>
+                    <p>&copy; 2026 Ayatiworks Workspace. All rights reserved.</p>
                     <p>
-                        <a href="{{ company_website }}" target="_blank">Visit Website</a>
+                        <a href="https://ayatiworks.com" target="_blank">Visit Website</a>
                         <span style="margin: 0 8px; color: #d1d5db;">|</span>
-                        <a href="mailto:{{ support_email }}">Support</a>
+                        <a href="mailto:rubankumar@ayatiworks.com">Support</a>
                     </p>
-                    <p>{{ company_address }}</p>
+                    <p>123 Innovation Drive, Tech City</p>
                 </div>
             </div>
         </center>

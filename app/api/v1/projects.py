@@ -29,6 +29,7 @@ from app.schemas.project import (
     TimeEntryCreate,
     TimeEntryResponse,
 )
+from app.services.email_service import email_service
 from app.services.employee_service import EmployeeService
 
 router = APIRouter(tags=["Projects & Tasks"])
@@ -185,6 +186,33 @@ async def create_project(
     db.commit()
     db.refresh(project)
 
+    db.refresh(project)
+
+    # Send notification to manager if assigned
+    if project.manager_id:
+        try:
+            emp_service = EmployeeService(db)
+            manager = emp_service.get_by_id(project.manager_id)
+            if manager and manager.user_id:
+                # Need to fetch user to get email, get_by_id might join user, let's verify or fetch user
+                # Employee model usually has user relationship
+                if manager.user:
+                    email_service.send_project_created_email(
+                        to_email=manager.user.email,
+                        manager_name=f"{manager.user.first_name} {manager.user.last_name or ''}",
+                        project_data={
+                            'id': project.id,
+                            'name': project.name,
+                            'code': project.code,
+                            'client_name': project.client.name if project.client else 'N/A',
+                            'start_date': str(project.start_date),
+                            'end_date': str(project.end_date) if project.end_date else None
+                        }
+                    )
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to send project creation email: {e}")
+
     return ProjectResponse.model_validate(project)
 
 
@@ -319,6 +347,35 @@ async def add_project_member(
         response.employee_email = member.employee.user.email
     else:
         response.employee_name = "Unknown"
+
+    return response
+
+
+    # Send notification to new member
+    try:
+        emp_service = EmployeeService(db)
+        employee = emp_service.get_by_id(data.employee_id)
+        
+        # Get manager name
+        manager_name = "N/A"
+        if project.manager_id:
+            manager = emp_service.get_by_id(project.manager_id)
+            if manager and manager.user:
+                manager_name = f"{manager.user.first_name} {manager.user.last_name or ''}"
+
+        if employee and employee.user:
+            email_service.send_project_assignment_email(
+                to_email=employee.user.email,
+                employee_name=f"{employee.user.first_name} {employee.user.last_name or ''}",
+                project_name=project.name,
+                role=data.role,
+                manager_name=manager_name,
+                start_date=str(date.today()),
+                project_id=project.id
+            )
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to send project assignment email: {e}")
 
     return response
 

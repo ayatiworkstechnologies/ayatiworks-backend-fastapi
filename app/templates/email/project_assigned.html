@@ -1,0 +1,26 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h1>You've been added to a Project! 🎯</h1>
+
+<p>Hi {{ employee_name }},</p>
+
+<p>You have been added as a member to the project <strong>{{ project_name }}</strong>.</p>
+
+<div class="info-box">
+    <p><strong>Assignment Details:</strong></p>
+    <p><strong>Project:</strong> {{ project_name }}</p>
+    <p><strong>Manager:</strong> {{ manager_name }}</p>
+    <p><strong>Your Role:</strong> {{ role }}</p>
+    <p><strong>Start Date:</strong> {{ start_date }}</p>
+</div>
+
+<p>Please check the project dashboard for your assigned tasks and updates.</p>
+
+<center>
+    <a href="{{ dashboard_url }}" class="button">Go to Project</a>
+</center>
+
+<p>Best regards,<br>
+<strong>The Ayatiworks Team</strong></p>
+{% endblock %}

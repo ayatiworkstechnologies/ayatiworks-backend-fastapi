@@ -17,11 +17,13 @@
 {% endif %}
 
 {% if action_url %}
-<a href="{{ action_url }}" class="button">{{ action_text|default('View Details') }}</a>
+<center>
+    <a href="{{ action_url }}" class="button">{{ action_text|default('View Details') }}</a>
+</center>
 {% endif %}
 
 {% if footer_note %}
-<p style="margin-top: 30px; font-size: 14px; color: #666; padding-top: 20px; border-top: 1px solid #e9ecef;">
+<p style="margin-top: 24px; font-size: 13px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px;">
     {{ footer_note }}
 </p>
 {% endif %}

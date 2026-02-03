@@ -410,6 +410,86 @@ class EmailService:
             )
 
 
+
+    def send_project_created_email(
+        self,
+        to_email: str,
+        manager_name: str,
+        project_data: dict[str, Any]
+    ) -> bool:
+        """Send notification to manager about new project."""
+        context = {
+            'manager_name': manager_name,
+            'project_name': project_data.get('name'),
+            'project_code': project_data.get('code'),
+            'client_name': project_data.get('client_name', 'N/A'),
+            'start_date': project_data.get('start_date'),
+            'end_date': project_data.get('end_date'),
+            'dashboard_url': f"{self.default_context.get('login_url', '')}/projects/{project_data.get('id')}",
+        }
+
+        return self.send_templated_email(
+            to_email=to_email,
+            subject=f"New Project Assigned: {project_data.get('name')}",
+            template_name='email/project_created.html',
+            context=context
+        )
+
+    def send_project_assignment_email(
+        self,
+        to_email: str,
+        employee_name: str,
+        project_name: str,
+        role: str,
+        manager_name: str,
+        start_date: str,
+        project_id: int
+    ) -> bool:
+        """Send notification to employee about project assignment."""
+        context = {
+            'employee_name': employee_name,
+            'project_name': project_name,
+            'manager_name': manager_name,
+            'role': role,
+            'start_date': start_date,
+            'dashboard_url': f"{self.default_context.get('login_url', '')}/projects/{project_id}",
+        }
+
+        return self.send_templated_email(
+            to_email=to_email,
+            subject=f"You've been added to {project_name}",
+            template_name='email/project_assigned.html',
+            context=context
+        )
+
+    def send_team_addition_email(
+        self,
+        to_email: str,
+        employee_name: str,
+        team_name: str,
+        department_name: str,
+        team_lead_name: str,
+        role: str,
+        team_id: int
+    ) -> bool:
+        """Send notification to employee about team addition."""
+        context = {
+            'employee_name': employee_name,
+            'team_name': team_name,
+            'department_name': department_name,
+            'team_lead_name': team_lead_name,
+            'role': role,
+            'dashboard_url': f"{self.default_context.get('login_url', '')}/teams/{team_id}",
+        }
+
+        return self.send_templated_email(
+            to_email=to_email,
+            subject=f"Welcome to the {team_name} Team!",
+            template_name='email/team_added.html',
+            context=context
+        )
+
+
 # Singleton instance
 email_service = EmailService()
 
@@ -444,3 +524,44 @@ def employee_welcome_email(
 
     return subject, html_content
 
+
+def generic_notification_email(
+    recipient_name: str,
+    title: str,
+    message: str,
+    action_url: str | None = None
+) -> tuple[str, str]:
+    """Generate generic notification email."""
+    context = {
+        'recipient_name': recipient_name,
+        'notification_title': title,
+        'notification_message': message,
+        'action_url': action_url,
+        'action_text': 'View Details' if action_url else None
+    }
+    
+    html_content = email_service.render_template('email/notification.html', context)
+    return title, html_content
+
+
+def task_assigned_email(
+    assignee_name: str,
+    task_title: str,
+    project_name: str,
+    assigned_by: str,
+    priority: str,
+    due_date: str | None = None
+) -> tuple[str, str]:
+    """Generate task assigned email."""
+    context = {
+        'assignee_name': assignee_name,
+        'task_title': task_title,
+        'project_name': project_name,
+        'assigned_by': assigned_by,
+        'priority': priority,
+        'due_date': due_date,
+        'dashboard_url': f"{email_service.default_context.get('login_url', '')}/tasks"
+    }
+    
+    html_content = email_service.render_template('email/task_assigned.html', context)
+    return f"New Task Assigned: {task_title}", html_content
