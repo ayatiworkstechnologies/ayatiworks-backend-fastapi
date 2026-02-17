@@ -333,3 +333,337 @@ async def delete_application(
     db.delete(application)
     db.commit()
 
+
+
+# =======================
+# Dynamic Public API (API Key Protected)
+# =======================
+
+from fastapi import Header, HTTPException
+from app.models.client import Client
+from app.models.client_module import ClientModule, ClientModuleRecord, ClientSmtpConfig, ClientMailTemplate
+from app.schemas.client_module import ClientSendEmailRequest, ClientModuleRecordResponse, ClientModuleRecordCreate
+from app.schemas.common import MessageResponse, PaginatedResponse
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
+import ssl
+from jinja2 import Environment, BaseLoader
+import logging
+
+logger = logging.getLogger(__name__)
+
+def get_client_by_api_key(
+    x_api_key: str = Header(..., alias="X-API-Key"),
+    db: Session = Depends(get_db)
+) -> User:  # Returning Client actually
+    from app.models.client import Client
+    client = db.query(Client).filter(Client.api_key == x_api_key, Client.is_deleted == False).first()
+    if not client:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+    return client
+import logging
+
+logger = logging.getLogger(__name__)
+
+@router.post("/{client_slug}/send-email", response_model=MessageResponse)
+async def public_send_email(
+    client_slug: str,
+    data: ClientSendEmailRequest,
+    client: Client = Depends(get_client_by_api_key),
+    db: Session = Depends(get_db),
+):
+    """
+    Send email via public API (API Key required).
+    Uses Client's SMTP config or System fallback.
+    """
+    if client.slug != client_slug:
+         raise HTTPException(status_code=403, detail="API Key does not match client context")
+
+    # Get client SMTP config
+    smtp_config = db.query(ClientSmtpConfig).filter(
+        ClientSmtpConfig.client_id == client.id,
+        ClientSmtpConfig.is_deleted == False,
+    ).first()
+
+    # Resolve subject and body
+    subject = data.subject
+    html_body = data.html_body
+
+    if data.template_id:
+        template = db.query(ClientMailTemplate).filter(
+            ClientMailTemplate.id == data.template_id,
+            ClientMailTemplate.client_id == client.id,
+            ClientMailTemplate.is_deleted == False,
+        ).first()
+        if not template:
+            raise HTTPException(status_code=404, detail="Mail template not found")
+
+        subject = data.subject or template.subject
+        html_body = data.html_body or template.html_body
+
+    if not subject or not html_body:
+        raise HTTPException(status_code=400, detail="Subject and body are required")
+
+    # Variable substitution using Jinja2
+    if data.variables:
+        jinja_env = Environment(loader=BaseLoader())
+        try:
+            subject_tmpl = jinja_env.from_string(subject)
+            subject = subject_tmpl.render(**data.variables)
+
+            body_tmpl = jinja_env.from_string(html_body)
+            html_body = body_tmpl.render(**data.variables)
+        except Exception as e:
+            logger.error(f"Template rendering error: {e}")
+            raise HTTPException(status_code=400, detail=f"Template rendering error: {str(e)}")
+
+    # Use System SMTP if no client config
+    if not smtp_config:
+        from app.services.email_service import email_service
+        try:
+            success = email_service.send_email(
+                to_email=data.to_email,
+                subject=subject,
+                html_content=html_body,
+                cc=data.cc,
+                bcc=data.bcc
+            )
+            if not success:
+               raise Exception("System email service returned failure")
+            
+            return MessageResponse(message=f"Email sent successfully via System SMTP to {data.to_email}")
+        except Exception as e:
+             logger.error(f"System email sending failed for client {client.id}: {e}")
+             raise HTTPException(status_code=500, detail=f"Failed to send email via System SMTP: {str(e)}")
+
+    # Use Client Custom SMTP
+    try:
+        # Wrap in base email template
+        from app.services.email_service import email_service
+        try:
+            wrapped_body = email_service.render_template(
+                'email/client_custom.html',
+                {'custom_content': html_body, 'title': subject}
+            )
+        except Exception:
+            wrapped_body = html_body
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        from_display = f"{smtp_config.from_name} <{smtp_config.from_email}>" if smtp_config.from_name else smtp_config.from_email
+        msg["From"] = from_display
+        msg["To"] = data.to_email
+
+        if data.cc:
+            msg["Cc"] = ", ".join(data.cc)
+
+        msg.attach(MIMEText(wrapped_body, "html"))
+
+        recipients = [data.to_email]
+        if data.cc:
+            recipients.extend(data.cc)
+        if data.bcc:
+            recipients.extend(data.bcc)
+
+        context = ssl.create_default_context()
+        if smtp_config.port == 465:
+            server = smtplib.SMTP_SSL(smtp_config.host, smtp_config.port, context=context)
+        else:
+            server = smtplib.SMTP(smtp_config.host, smtp_config.port)
+            if smtp_config.use_tls:
+                server.starttls(context=context)
+
+        server.login(smtp_config.username, smtp_config.password)
+        server.sendmail(smtp_config.from_email, recipients, msg.as_string())
+        server.quit()
+
+        return MessageResponse(message=f"Email sent successfully to {data.to_email}")
+
+    except Exception as e:
+        logger.error(f"Email sending failed for client {client.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+
+@router.get("/{client_slug}/{module_slug}/records", response_model=PaginatedResponse[ClientModuleRecordResponse])
+async def public_list_records(
+    client_slug: str,
+    module_slug: str,
+    page: int = 1,
+    page_size: int = 20,
+    search: str | None = None,
+    client: Client = Depends(get_client_by_api_key),
+    db: Session = Depends(get_db),
+):
+    """List records for a module via public API."""
+    if client.slug != client_slug:
+         raise HTTPException(status_code=403, detail="API Key does not match client context")
+
+    module = db.query(ClientModule).filter(
+        ClientModule.client_id == client.id,
+        ClientModule.slug == module_slug,
+        ClientModule.is_deleted == False,
+    ).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    query = db.query(ClientModuleRecord).filter(
+        ClientModuleRecord.module_id == module.id,
+        ClientModuleRecord.is_deleted == False,
+    )
+    # Simple search implementation if needed later
+    
+    total = query.count()
+    records = query.order_by(ClientModuleRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    
+    items = [
+        ClientModuleRecordResponse(
+            id=r.id,
+            module_id=r.module_id,
+            data=r.data,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+            created_by=r.created_by,
+            updated_by=r.updated_by
+        ) for r in records
+    ]
+
+    return PaginatedResponse.create(items, total, page, page_size)
+
+
+@router.post("/{client_slug}/{module_slug}/records", response_model=ClientModuleRecordResponse, status_code=status.HTTP_201_CREATED)
+async def public_create_record(
+    client_slug: str,
+    module_slug: str,
+    data: ClientModuleRecordCreate,
+    client: Client = Depends(get_client_by_api_key),
+    db: Session = Depends(get_db),
+):
+    """Create a record via public API."""
+    if client.slug != client_slug:
+         raise HTTPException(status_code=403, detail="API Key does not match client context")
+
+    module = db.query(ClientModule).filter(
+        ClientModule.client_id == client.id,
+        ClientModule.slug == module_slug,
+        ClientModule.is_deleted == False,
+    ).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    
+    # Optional: Validate data against module fields here
+    
+    record = ClientModuleRecord(
+        module_id=module.id,
+        data=data.data,
+        is_active=data.is_active,
+        # Created by is None for public API or maybe a system user? 
+        # For now leaving it null or we could track it via API key if we wanted.
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    # Auto-send email if template is assigned
+    if module.mail_template_id:
+        try:
+            # 1. Get Template
+            template = db.query(ClientMailTemplate).filter(
+                ClientMailTemplate.id == module.mail_template_id,
+                ClientMailTemplate.client_id == client.id,
+                ClientMailTemplate.is_deleted == False
+            ).first()
+
+            if template:
+                # 2. Find Recipient Email
+                to_email = None
+                # Priority 1: 'email' key
+                for key, value in record.data.items():
+                    if key.lower() == 'email' and isinstance(value, str) and '@' in value:
+                        to_email = value
+                        break
+                
+                # Priority 2: Any field with 'email' in key or value looks like email
+                if not to_email:
+                    for key, value in record.data.items():
+                         if isinstance(value, str) and '@' in value and '.' in value:
+                             to_email = value
+                             break
+                
+                if to_email:
+                    # 3. Render Content
+                    subject = template.subject
+                    html_body = template.html_body
+                    
+                    jinja_env = Environment(loader=BaseLoader())
+                    try:
+                        subject_tmpl = jinja_env.from_string(subject)
+                        subject = subject_tmpl.render(**record.data)
+
+                        body_tmpl = jinja_env.from_string(html_body)
+                        html_body = body_tmpl.render(**record.data)
+                    except Exception as e:
+                        logger.error(f"Auto-email template rendering failed: {e}")
+                        # Don't fail the record creation, just log error
+                        to_email = None # Skip sending
+
+                    if to_email:
+                        # 4. Send Email (Copy of public_send_email logic)
+                        smtp_config = db.query(ClientSmtpConfig).filter(
+                            ClientSmtpConfig.client_id == client.id,
+                            ClientSmtpConfig.is_deleted == False
+                        ).first()
+
+                        if not smtp_config:
+                            # System SMTP
+                            from app.services.email_service import email_service
+                            email_service.send_email(
+                                to_email=to_email,
+                                subject=subject,
+                                html_content=html_body
+                            )
+                        else:
+                            # Client Custom SMTP
+                            # Wrap in base email template
+                            from app.services.email_service import email_service
+                            try:
+                                wrapped_body = email_service.render_template(
+                                    'email/client_custom.html',
+                                    {'custom_content': html_body, 'title': subject}
+                                )
+                            except Exception:
+                                wrapped_body = html_body
+
+                            msg = MIMEMultipart("alternative")
+                            msg["Subject"] = subject
+                            from_display = f"{smtp_config.from_name} <{smtp_config.from_email}>" if smtp_config.from_name else smtp_config.from_email
+                            msg["From"] = from_display
+                            msg["To"] = to_email
+
+                            msg.attach(MIMEText(wrapped_body, "html"))
+
+                            context = ssl.create_default_context()
+                            if smtp_config.port == 465:
+                                server = smtplib.SMTP_SSL(smtp_config.host, smtp_config.port, context=context)
+                            else:
+                                server = smtplib.SMTP(smtp_config.host, smtp_config.port)
+                                if smtp_config.use_tls:
+                                    server.starttls(context=context)
+
+                            server.login(smtp_config.username, smtp_config.password)
+                            server.sendmail(smtp_config.from_email, [to_email], msg.as_string())
+                            server.quit()
+
+        except Exception as e:
+            logger.error(f"Failed to auto-send email for record {record.id}: {e}")
+            # Continue without erroring out the response
+
+    return ClientModuleRecordResponse(
+        id=record.id,
+        module_id=record.module_id,
+        data=record.data,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        created_by=record.created_by,
+        updated_by=record.updated_by
+    )

@@ -9,6 +9,7 @@ from app.api.v1 import (
     attendance,
     auth,
     blogs,
+    client_modules,
     clients,
     companies,
     dashboard,
@@ -19,6 +20,7 @@ from app.api.v1 import (
     meta,
     notifications,
     organizations,
+    payroll,
     permissions,
     projects,
     public,
@@ -51,12 +53,14 @@ router.include_router(employees.router)
 router.include_router(attendance.router)
 router.include_router(shifts.router)
 router.include_router(leaves.router)
+router.include_router(payroll.router)
 
 # ============== Project Management ==============
 router.include_router(projects.router)
 
 # ============== CRM & Business ==============
 router.include_router(clients.router)
+router.include_router(client_modules.router)
 router.include_router(invoices.router)
 router.include_router(leads.router, prefix="/leads")
 router.include_router(meta.router)

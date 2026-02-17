@@ -24,19 +24,22 @@ class Settings(BaseSettings):
 
     # Application
     APP_NAME: str = "Enterprise HRMS"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "1.1.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"  # development, staging, production
 
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+    WORKERS: int = 1  # Gunicorn workers (set 2*CPU+1 in production)
+    LOG_LEVEL: str = "info"  # uvicorn/gunicorn log level
 
     # Database - REQUIRED, no default (must be in .env)
     DATABASE_URL: str = Field(..., description="Database connection URL")
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
-    DB_POOL_RECYCLE: int = 3600
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE: int = 1800
+    DB_POOL_TIMEOUT: int = 30
 
     # JWT Authentication - REQUIRED, no default (must be in .env)
     SECRET_KEY: str = Field(..., min_length=32, description="JWT signing key - must be at least 32 characters")
@@ -44,7 +47,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # CORS
+    # CORS — add your production frontend URL here
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8080"]
 
     # Email SMTP - REQUIRED for production

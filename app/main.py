@@ -1,8 +1,10 @@
 """
 FastAPI Application Entry Point.
 Enterprise HRMS/CRM/PMS Backend.
+Optimized for fast request/response performance.
 """
 
+import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -11,6 +13,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -18,9 +21,23 @@ from slowapi.util import get_remote_address
 from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 
+try:
+    from fastapi.responses import ORJSONResponse
+    DEFAULT_RESPONSE_CLASS = ORJSONResponse
+except ImportError:
+    DEFAULT_RESPONSE_CLASS = JSONResponse
+
 from app.api.v1.router import router as api_v1_router
 from app.config import settings
 from app.database import init_db
+
+# Configure structured logging
+logging.basicConfig(
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("app")
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -60,15 +77,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Calculate duration
         duration = time.time() - start_time
 
-        # Log request (only if not health check to reduce noise)
-        if not request.url.path.startswith("/health"):
-            print(
-                f"[{request_id}] {request.method} {request.url.path} "
+        # Log request (skip health checks and static files to reduce noise)
+        path = request.url.path
+        if not path.startswith(("/health", "/uploads")):
+            level = logging.WARNING if duration > 1.0 else logging.INFO
+            logger.log(
+                level,
+                f"[{request_id}] {request.method} {path} "
                 f"-> {response.status_code} ({duration:.3f}s)"
             )
 
-        # Add request ID to response headers
+        # Add performance headers
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Response-Time"] = f"{duration:.3f}s"
         return response
 
 
@@ -76,21 +97,24 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
-    print("🚀 Starting Enterprise HRMS Backend...")
-    print(f"📦 Environment: {settings.ENVIRONMENT}")
-    print(f"🔧 Debug Mode: {settings.DEBUG}")
+    logger.info("🚀 Starting Enterprise HRMS Backend v%s", settings.APP_VERSION)
+    logger.info("📦 Environment: %s | Debug: %s", settings.ENVIRONMENT, settings.DEBUG)
 
     # Initialize database tables
     init_db()
-    print("✅ Database initialized")
+    logger.info("✅ Database initialized (pool_size=%d, max_overflow=%d)",
+                settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW)
 
     yield
 
     # Shutdown
-    print("👋 Shutting down...")
+    logger.info("👋 Shutting down...")
 
 
-# Create FastAPI application
+# Disable docs in production for security
+_is_production = settings.ENVIRONMENT == "production"
+
+# Create FastAPI application with ORJSONResponse for ~3x faster serialization
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -107,31 +131,46 @@ app = FastAPI(
     - 🤝 Client Management (CRM)
     - 📈 Reporting & Analytics
     """,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-    lifespan=lifespan
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+    lifespan=lifespan,
+    default_response_class=DEFAULT_RESPONSE_CLASS,
 )
 
 # Add rate limiter to app state and exception handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Add security headers middleware
-app.add_middleware(SecurityHeadersMiddleware)
+# ============================================================
+# MIDDLEWARE ORDER MATTERS! Added in REVERSE order of execution.
+# Execution order: CORS -> GZip -> Security -> Logging
+# So we add them: Logging -> Security -> GZip -> CORS
+# ============================================================
 
-# Add request logging middleware
+# 4. Request logging (innermost)
 app.add_middleware(RequestLoggingMiddleware)
 
-# Add GZip compression for responses > 1KB
-from fastapi.middleware.gzip import GZipMiddleware
+# 3. Security headers
+app.add_middleware(SecurityHeadersMiddleware)
 
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+# 2. GZip compression for responses > 500 bytes
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# 1. CORS (outermost - must process first)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Register custom exception handlers
 from app.core.error_handler import register_exception_handlers
 
 register_exception_handlers(app)
+
 
 # Keep validation error handler for Pydantic validation
 @app.exception_handler(RequestValidationError)
@@ -145,7 +184,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "type": error["type"]
         })
 
-    # Get request ID
     request_id = getattr(request.state, 'request_id', 'unknown')
 
     return JSONResponse(
@@ -160,15 +198,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "path": str(request.url.path)
         }
     )
-
-# CORS Middleware - Allow all origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # Include API routers
@@ -212,7 +241,7 @@ async def readiness_check():
 
     try:
         db = SessionLocal()
-        db.execute(text("SELECT 1"))  # Fixed: use text() for raw SQL
+        db.execute(text("SELECT 1"))
         db.close()
         return {"status": "ready", "database": "connected"}
     except Exception as e:
@@ -235,7 +264,7 @@ async def database_health():
 
     try:
         db = SessionLocal()
-        db.execute(text("SELECT 1"))  # Fixed: use text() for raw SQL
+        db.execute(text("SELECT 1"))
         db.close()
         return {"status": "connected"}
     except Exception as e:
@@ -255,5 +284,3 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
-
-

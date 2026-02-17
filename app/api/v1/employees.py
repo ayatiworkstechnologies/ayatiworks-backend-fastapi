@@ -426,6 +426,7 @@ async def bulk_delete_employees(
     """
     Bulk delete multiple employees.
     Requires employee.delete permission.
+    Optimized: single batch update instead of sequential loop.
     """
     if not employee_ids:
         raise HTTPException(
@@ -433,11 +434,20 @@ async def bulk_delete_employees(
             detail="No employee IDs provided"
         )
 
-    service = EmployeeService(db)
+    from datetime import datetime
+    from app.models.employee import Employee
 
-    deleted_count = 0
-    for emp_id in employee_ids:
-        if service.delete(emp_id, deleted_by=current_user.id):
-            deleted_count += 1
+    deleted_count = db.query(Employee).filter(
+        Employee.id.in_(employee_ids),
+        Employee.is_deleted == False
+    ).update(
+        {
+            Employee.is_deleted: True,
+            Employee.deleted_at: datetime.utcnow(),
+            Employee.deleted_by: current_user.id
+        },
+        synchronize_session="fetch"
+    )
+    db.commit()
 
     return {"message": f"{deleted_count} employees deleted successfully", "count": deleted_count}

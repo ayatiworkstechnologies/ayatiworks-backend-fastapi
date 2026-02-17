@@ -1,7 +1,10 @@
 """
 Meta Ads API Endpoints.
+
+Uses the real Meta Graph API via MetaGraphService.
 """
 
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,7 +25,27 @@ from app.schemas.meta import (
     MetaLeadResponse,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["Meta Ads"])
+
+
+# ============ Helper: Resolve client_id ============
+
+def _resolve_client_id(current_user: User, db: Session, client_id: int | None = None) -> int:
+    """Resolve the client_id based on user role."""
+    if current_user.role.code == 'CLIENT':
+        client = db.query(Client).filter(Client.email == current_user.email).first()
+        if not client:
+            raise ResourceNotFoundError("Client Profile", "current_user")
+        return client.id
+
+    if current_user.role.is_system or current_user.role.code in ['ADMIN', 'SUPER_ADMIN']:
+        if not client_id:
+            raise HTTPException(status_code=400, detail="client_id parameter is required for Admins")
+        return client_id
+
+    raise PermissionDeniedError("Valid Client ID required.")
 
 
 # ============ Credentials / Config ============
@@ -33,28 +56,10 @@ async def get_meta_config(
     current_user: User = Depends(PermissionChecker("meta.view")),
     db: Session = Depends(get_db)
 ):
-    """Get Meta Ads configuration for the current client."""
+    """Get Meta Ads configuration for the client."""
+    target_id = _resolve_client_id(current_user, db, client_id)
 
-    target_client_id = None
-
-    # 1. If Client Role, force their own ID
-    if current_user.role.code == 'CLIENT':
-        client = db.query(Client).filter(Client.email == current_user.email).first()
-        if not client:
-            raise ResourceNotFoundError("Client Profile", "current_user")
-        target_client_id = client.id
-
-    # 2. If Admin/Super Admin, use provided ID or error
-    elif current_user.role.is_system or current_user.role.code in ['ADMIN', 'SUPER_ADMIN']:
-        if not client_id:
-            # For list views, we might return null, but for config we need specific client
-            raise HTTPException(status_code=400, detail="client_id parameter is required for Admins")
-        target_client_id = client_id
-
-    if not target_client_id:
-        raise PermissionDeniedError("Valid Client ID required.")
-
-    config = db.query(MetaCredential).filter(MetaCredential.client_id == target_client_id).first()
+    config = db.query(MetaCredential).filter(MetaCredential.client_id == target_id).first()
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
@@ -64,24 +69,16 @@ async def get_meta_config(
 @router.post("/meta/config", response_model=MetaCredentialResponse)
 async def save_meta_config(
     data: MetaCredentialCreate,
+    client_id: int | None = None,
     current_user: User = Depends(PermissionChecker("meta.manage")),
     db: Session = Depends(get_db)
 ):
     """Save or update Meta Ads configuration."""
-    client_id = None
-    if current_user.role.code == 'CLIENT':
-        client = db.query(Client).filter(Client.email == current_user.email).first()
-        if not client:
-            raise ResourceNotFoundError("Client Profile", "current_user")
-        client_id = client.id
+    target_id = _resolve_client_id(current_user, db, client_id)
 
-    if not client_id:
-        raise PermissionDeniedError("No associated client profile found.")
-
-    config = db.query(MetaCredential).filter(MetaCredential.client_id == client_id).first()
+    config = db.query(MetaCredential).filter(MetaCredential.client_id == target_id).first()
 
     if config:
-        # Update
         config.ad_account_id = data.ad_account_id
         config.access_token = data.access_token
         if data.app_id:
@@ -90,9 +87,8 @@ async def save_meta_config(
             config.app_secret = data.app_secret
         config.updated_by = current_user.id
     else:
-        # Create
         config = MetaCredential(
-            client_id=client_id,
+            client_id=target_id,
             **data.model_dump(),
             created_by=current_user.id
         )
@@ -103,27 +99,74 @@ async def save_meta_config(
     return MetaCredentialResponse.model_validate(config)
 
 
+# ============ Token Exchange ============
+
+@router.post("/meta/exchange-token")
+async def exchange_token(
+    short_lived_token: str,
+    client_id: int | None = None,
+    current_user: User = Depends(PermissionChecker("meta.manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Exchange a short-lived Meta token for a long-lived token.
+    Requires app_id and app_secret to be configured in Meta settings.
+    Automatically saves the new long-lived token.
+    """
+    from app.services.meta_service import MetaGraphService
+
+    target_id = _resolve_client_id(current_user, db, client_id)
+
+    config = db.query(MetaCredential).filter(MetaCredential.client_id == target_id).first()
+    if not config:
+        raise HTTPException(status_code=400, detail="Configure Meta settings first (Ad Account ID, App ID, App Secret)")
+
+    if not config.app_id or not config.app_secret:
+        raise HTTPException(status_code=400, detail="App ID and App Secret required for token exchange")
+
+    try:
+        with MetaGraphService(
+            access_token=config.access_token,
+            ad_account_id=config.ad_account_id,
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+        ) as service:
+            result = service.exchange_token(short_lived_token)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Save the new long-lived token
+    new_token = result.get("access_token")
+    if new_token:
+        config.access_token = new_token
+        config.updated_by = current_user.id
+        db.commit()
+
+    return {
+        "message": "Token exchanged successfully",
+        "token_type": result.get("token_type", "bearer"),
+        "expires_in": result.get("expires_in"),
+    }
+
+
 # ============ Campaigns ============
 
 @router.get("/meta/campaigns", response_model=PaginatedResponse[MetaCampaignResponse])
 async def list_meta_campaigns(
+    client_id: int | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(PermissionChecker("meta.view")),
     db: Session = Depends(get_db)
 ):
     """List synced campaigns."""
-    client_id = None
-    if current_user.role.code == 'CLIENT':
-        client = db.query(Client).filter(Client.email == current_user.email).first()
-        client_id = client.id if client else -1
+    target_id = _resolve_client_id(current_user, db, client_id)
 
-    query = db.query(MetaCampaign).filter(MetaCampaign.client_id == client_id)
+    query = db.query(MetaCampaign).filter(MetaCampaign.client_id == target_id)
     total = query.count()
 
-    campaigns = query.offset((page - 1) * page_size).limit(page_size).all()
+    campaigns = query.order_by(desc(MetaCampaign.id)).offset((page - 1) * page_size).limit(page_size).all()
 
-    # Enrich with simple lead count (could be optimized)
     items = []
     for c in campaigns:
         resp = MetaCampaignResponse.model_validate(c)
@@ -137,6 +180,7 @@ async def list_meta_campaigns(
 
 @router.get("/meta/leads", response_model=PaginatedResponse[MetaLeadResponse])
 async def list_meta_leads(
+    client_id: int | None = None,
     campaign_id: int | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -146,18 +190,17 @@ async def list_meta_leads(
     """List synced leads."""
     from sqlalchemy.orm import joinedload
 
-    client_id = None
-    if current_user.role.code == 'CLIENT':
-        client = db.query(Client).filter(Client.email == current_user.email).first()
-        client_id = client.id if client else -1
+    target_id = _resolve_client_id(current_user, db, client_id)
 
-    query = db.query(MetaLead).filter(MetaLead.client_id == client_id)
+    query = db.query(MetaLead).filter(MetaLead.client_id == target_id)
 
     if campaign_id:
         query = query.filter(MetaLead.campaign_id == campaign_id)
 
     total = query.count()
-    leads = query.options(joinedload(MetaLead.campaign)).order_by(desc(MetaLead.created_time)).offset((page - 1) * page_size).limit(page_size).all()
+    leads = query.options(
+        joinedload(MetaLead.campaign)
+    ).order_by(desc(MetaLead.created_time)).offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
     for lead_item in leads:
@@ -170,84 +213,53 @@ async def list_meta_leads(
     return PaginatedResponse.create(items, total, page, page_size)
 
 
-# ============ Sync (Simulation) ============
+# ============ Sync (REAL Meta Graph API) ============
 
 @router.post("/meta/sync", response_model=MessageResponse)
 async def sync_meta_data(
+    client_id: int | None = None,
     current_user: User = Depends(PermissionChecker("meta.manage")),
     db: Session = Depends(get_db)
 ):
     """
-    Trigger synchronization with Meta API.
-    (Currently MOCKED for demonstration)
+    Trigger real synchronization with Meta Graph API.
+
+    Flow:
+      1. Fetch campaigns from ad account
+      2. For each campaign → fetch ads
+      3. For each ad → fetch lead forms
+      4. For each form → fetch leads
+      5. Store everything in database
     """
-    client_id = None
-    if current_user.role.code == 'CLIENT':
-        client = db.query(Client).filter(Client.email == current_user.email).first()
-        client_id = client.id if client else None
+    from app.services.meta_service import MetaGraphService
 
-    if not client_id:
-        raise PermissionDeniedError("Client profile required for sync.")
+    target_id = _resolve_client_id(current_user, db, client_id)
 
-    config = db.query(MetaCredential).filter(MetaCredential.client_id == client_id).first()
+    config = db.query(MetaCredential).filter(MetaCredential.client_id == target_id).first()
     if not config:
-        raise HTTPException(status_code=400, detail="Meta credentials not configured.")
+        raise HTTPException(status_code=400, detail="Meta credentials not configured. Go to Settings.")
 
-    # --- MOCKED SYNC LOGIC START ---
-    import random
+    if not config.access_token or not config.ad_account_id:
+        raise HTTPException(status_code=400, detail="Access token and Ad Account ID are required.")
 
-    # 1. Mock Campaigns
-    campaigns_data = [
-        {"id": "camp_123", "name": "Summer Sale Promo", "status": "ACTIVE", "budget": 100.0},
-        {"id": "camp_456", "name": "Brand Awareness", "status": "PAUSED", "budget": 50.0},
-        {"id": "camp_789", "name": "Lead Gen - Ebook", "status": "ACTIVE", "budget": 200.0},
-    ]
+    try:
+        with MetaGraphService(
+            access_token=config.access_token,
+            ad_account_id=config.ad_account_id,
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+        ) as service:
+            stats = service.full_sync(db, target_id)
+    except Exception as e:
+        logger.error(f"Meta sync error: {e}")
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
-    for c_data in campaigns_data:
-        camp = db.query(MetaCampaign).filter(
-            MetaCampaign.client_id == client_id,
-            MetaCampaign.campaign_id == c_data["id"]
-        ).first()
-
-        if not camp:
-            camp = MetaCampaign(
-                client_id=client_id,
-                campaign_id=c_data["id"],
-                name=c_data["name"],
-                status=c_data["status"],
-                daily_budget=c_data["budget"],
-                start_time=datetime.utcnow()
-            )
-            db.add(camp)
-
-    db.flush() # Get IDs
-
-    # 2. Mock Leads
-    campaigns = db.query(MetaCampaign).filter(MetaCampaign.client_id == client_id).all()
-    if campaigns:
-        # Create a random lead
-        camp = random.choice(campaigns)
-        lead_id = f"lead_{random.randint(1000, 9999)}"
-
-        # Check duplicate
-        if not db.query(MetaLead).filter(MetaLead.lead_id == lead_id).first():
-            new_lead = MetaLead(
-                client_id=client_id,
-                campaign_id=camp.id,
-                lead_id=lead_id,
-                created_time=datetime.utcnow(),
-                full_name=f"Lead {random.randint(1, 100)}",
-                email=f"lead{random.randint(1, 100)}@example.com",
-                phone_number=f"+1555{random.randint(100000, 999999)}",
-                status="new",
-                raw_data={"source": "fb", "ad_id": "ad_123"}
-            )
-            db.add(new_lead)
-
+    # Update last synced timestamp
     config.last_synced_at = datetime.utcnow()
-    # --- MOCKED SYNC LOGIC END ---
-
+    config.updated_by = current_user.id
     db.commit()
 
-    return MessageResponse(message="Synchronization completed successfully (Mocked).")
-
+    errors_text = f" ({len(stats['errors'])} warnings)" if stats.get("errors") else ""
+    return MessageResponse(
+        message=f"Sync complete: {stats['campaigns_synced']} campaigns, {stats['leads_synced']} leads synced{errors_text}"
+    )

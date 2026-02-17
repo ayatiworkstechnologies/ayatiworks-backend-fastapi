@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user
@@ -60,6 +60,40 @@ def get_dashboard_stats(
     return stats
 
 
+@router.get("/my-portal")
+def get_my_portal(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get client portal data for the currently logged-in user.
+    Matches user by email to a Client record.
+    """
+    from fastapi import HTTPException
+
+    client = db.query(Client).filter(Client.email == current_user.email).first()
+
+    if not client:
+        raise HTTPException(status_code=404, detail="No client profile found for your account.")
+
+    return {
+        "client_id": client.id,
+        "name": client.name,
+        "slug": client.slug,
+        "code": client.code,
+        "email": client.email,
+        "phone": client.phone,
+        "company_name": client.company_name,
+        "industry": client.industry,
+        "website": client.website,
+        "address": client.address,
+        "city": client.city,
+        "state": client.state,
+        "country": client.country,
+        "status": client.status,
+    }
+
+
 @router.get("/project-overview")
 def get_project_overview(
     db: Session = Depends(get_db),
@@ -67,27 +101,28 @@ def get_project_overview(
 ) -> Any:
     """
     Get project overview statistics for Projects page.
+    Optimized: uses SQL GROUP BY instead of fetching all rows.
     """
-    query = db.query(Project).filter(Project.is_deleted == False)
+    base_filter = [Project.is_deleted == False]
 
     # If client, filter by client
     if current_user.role and current_user.role.code == "CLIENT":
         client = db.query(Client).filter(Client.email == current_user.email).first()
         if client:
-            query = query.filter(Project.client_id == client.id)
+            base_filter.append(Project.client_id == client.id)
         else:
             return {"total": 0, "by_status": {}}
 
-    # Calculate counts by status
-    status_counts = {}
-    projects = query.all()
+    # Use SQL GROUP BY for counting — much faster than fetching all rows
+    status_rows = db.query(
+        Project.status, func.count(Project.id)
+    ).filter(*base_filter).group_by(Project.status).all()
 
-    for p in projects:
-        status_value = p.status
-        status_counts[status_value] = status_counts.get(status_value, 0) + 1
+    status_counts = {status: count for status, count in status_rows}
+    total = sum(status_counts.values())
 
     return {
-        "total": len(projects),
+        "total": total,
         "by_status": status_counts
     }
 
@@ -101,7 +136,7 @@ def _get_super_admin_stats(db: Session) -> dict[str, Any]:
 
     # System health check (DB connection)
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         system_health = "Healthy"
     except Exception:
         system_health = "Degraded"
@@ -500,4 +535,209 @@ def get_quick_actions(
     }
 
     return actions_map.get(role_code, actions_map["EMPLOYEE"])
+
+
+@router.get("/charts")
+def get_dashboard_charts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get role-based dashboard charts data.
+    """
+    role_code = current_user.role.code if current_user.role else "EMPLOYEE"
+    
+    # Common Date Range (Last 6 Months)
+    today = datetime.now()
+    six_months_ago = today - timedelta(days=180)
+    
+    charts = {}
+
+    # --- ADMIN / SUPER ADMIN ---
+    if role_code in ["SUPER_ADMIN", "ADMIN"]:
+        # 1. Project Distribution
+        project_query = db.query(Project.status, func.count(Project.id)).filter(
+            Project.is_deleted == False
+        )
+        if role_code == "ADMIN":
+            project_query = project_query.filter(Project.company_id == current_user.company_id)
+        
+        project_dist = project_query.group_by(Project.status).all()
+        charts["project_distribution"] = [
+            {"name": status.replace("_", " ").title(), "value": count} 
+            for status, count in project_dist
+        ]
+
+        # 2. Revenue Trend (Invoices Paid)
+        invoice_query = db.query(Invoice).filter(
+            Invoice.status == InvoiceStatus.PAID.value,
+            Invoice.updated_at >= six_months_ago
+            # Note: you might want to use paid_at if available
+        )
+        if role_code == "ADMIN":
+            invoice_query = invoice_query.filter(Invoice.company_id == current_user.company_id)
+            
+        invoices = invoice_query.all()
+        
+        # Aggregate by Month
+        revenue_map = {}
+        for i in range(6):
+            # i=0 is current month
+            # i=5 is 5 months ago
+            date = today - timedelta(days=30 * i)
+            key = date.strftime("%b")
+            revenue_map[key] = 0
+            
+        # Initialize map with zero (reversed order for display)
+        # We need keys in chronological order
+        chronological_keys = []
+        for i in range(5, -1, -1):
+             dt = today - timedelta(days=30 * i)
+             k = dt.strftime("%b")
+             chronological_keys.append(k)
+             revenue_map[k] = 0 # Ensure key exists
+
+        for inv in invoices:
+            if inv.updated_at:
+                date_key = inv.updated_at.strftime("%b")
+                if date_key in revenue_map:
+                    revenue_map[date_key] += inv.total
+                
+        charts["revenue_trend"] = [
+            {"name": k, "value": revenue_map[k]} for k in chronological_keys
+        ]
+
+    # --- CLIENT ---
+    elif role_code == "CLIENT":
+        client = db.query(Client).filter(Client.email == current_user.email).first()
+        if client:
+            # 1. Spending Trend
+            invoices = db.query(Invoice).filter(
+                Invoice.client_id == client.id,
+                Invoice.status == InvoiceStatus.PAID.value,
+                Invoice.updated_at >= six_months_ago
+            ).all()
+
+            # Initialize map
+            spending_map = {}
+            chronological_keys = []
+            for i in range(5, -1, -1):
+                 dt = today - timedelta(days=30 * i)
+                 k = dt.strftime("%b")
+                 chronological_keys.append(k)
+                 spending_map[k] = 0
+
+            for inv in invoices:
+                if inv.updated_at:
+                    k = inv.updated_at.strftime("%b")
+                    if k in spending_map:
+                        spending_map[k] += inv.total
+            
+            charts["spending_trend"] = [
+                {"name": k, "value": spending_map[k]} for k in chronological_keys
+            ]
+            
+            # 2. Project Status
+            proj_dist = db.query(Project.status, func.count(Project.id)).filter(
+                Project.client_id == client.id,
+                Project.is_deleted == False
+            ).group_by(Project.status).all()
+            
+            charts["project_status"] = [
+                {"name": s.replace("_", " ").title(), "value": c} for s, c in proj_dist
+            ]
+
+    # --- EMPLOYEE / MANAGER ---
+    elif role_code in ["EMPLOYEE", "MANAGER"]:
+        employee = db.query(Employee).filter(Employee.user_id == current_user.id).first()
+        if employee:
+             # 1. Task Completion (Last 7 Days)
+             week_ago = today - timedelta(days=7)
+             
+             tasks_query = db.query(Task).filter(
+                 Task.status == TaskStatus.DONE.value,
+                 Task.updated_at >= week_ago
+             )
+             
+             if role_code == "MANAGER":
+                 # Team tasks
+                 tasks_query = tasks_query.filter(Task.assignee.has(Employee.manager_id == employee.id))
+             else:
+                 # My tasks
+                 tasks_query = tasks_query.filter(Task.assignee_id == employee.id)
+                 
+             completed_tasks = tasks_query.all()
+             
+             # Daily aggregation
+             daily_map = {}
+             chronological_keys = []
+             for i in range(6, -1, -1):
+                 dt = today - timedelta(days=i)
+                 # e.g. "Mon"
+                 key = dt.strftime("%a")
+                 chronological_keys.append(key)
+                 daily_map[key] = 0
+                 
+             for t in completed_tasks:
+                 if t.updated_at:
+                     k = t.updated_at.strftime("%a")
+                     if k in daily_map:
+                         daily_map[k] += 1
+                         
+             charts["task_completion"] = [
+                 {"name": k, "value": daily_map[k]} for k in chronological_keys
+             ]
+
+    # --- HR ---
+    elif role_code == "HR":
+        company_id = current_user.company_id
+        
+        # 1. Recruitment Trend (New Hires)
+        new_hires_query = db.query(Employee).filter(
+            Employee.company_id == company_id,
+            Employee.joining_date >= six_months_ago.date()
+        ).all()
+        
+        hiring_map = {}
+        chronological_keys = []
+        for i in range(5, -1, -1):
+             dt = today - timedelta(days=30 * i)
+             k = dt.strftime("%b")
+             chronological_keys.append(k)
+             hiring_map[k] = 0
+
+        for emp in new_hires_query:
+            if emp.joining_date:
+                # Convert date to datetime for strftime if needed, or just use date directly
+                # emp.joining_date is likely date object
+                k = emp.joining_date.strftime("%b")
+                if k in hiring_map:
+                    hiring_map[k] += 1
+        
+        charts["recruitment_trend"] = [
+            {"name": k, "value": hiring_map[k]} for k in chronological_keys
+        ]
+        
+        # 2. Leave Trend (Approved Leaves)
+        leaves_query = db.query(Leave).filter(
+            Leave.company_id == company_id,
+            Leave.status == "approved",
+            Leave.start_date >= six_months_ago.date()
+        ).all()
+        
+        leave_map = {}
+        for k in chronological_keys:
+            leave_map[k] = 0
+            
+        for leave in leaves_query:
+            if leave.start_date:
+                k = leave.start_date.strftime("%b")
+                if k in leave_map:
+                    leave_map[k] += 1
+                    
+        charts["leave_trend"] = [
+            {"name": k, "value": leave_map[k]} for k in chronological_keys
+        ]
+
+    return charts
 

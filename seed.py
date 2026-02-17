@@ -127,7 +127,7 @@ def seed_db():
                 print(f"  Role already exists: {r_data['name']}")
             role_map[r_data["code"]] = role
         
-        # 5. Assign Permissions to Roles (Simplified for brevity, ensuring key roles have permissions)
+        # 5. Assign Permissions to Roles
         print("\nStep 5: Assigning Permissions...")
         
         # SUPER ADMIN & ADMIN
@@ -144,7 +144,7 @@ def seed_db():
                         if not db.query(RolePermission).filter_by(role_id=role.id, permission_id=p_id).first():
                             db.add(RolePermission(role_id=role.id, permission_id=p_id))
         
-        # MANAGER - Extended permissions (projects, tasks, teams, clients, own attendance/leave/payroll)
+        # MANAGER - Extended permissions
         manager_perms = [
             PermissionCode.DASHBOARD_VIEW,
             # Projects & Tasks
@@ -162,13 +162,13 @@ def seed_db():
             PermissionCode.LEAVE_VIEW, PermissionCode.LEAVE_APPLY,
             # Payroll (own)
             PermissionCode.PAYROLL_VIEW, PermissionCode.SALARY_VIEW,
-            # Clients
+            # Clients (view & manage)
             PermissionCode.CLIENT_VIEW,
             # Invoices
             PermissionCode.INVOICE_VIEW,
             # Reports
             PermissionCode.REPORT_VIEW, PermissionCode.REPORT_EXPORT,
-            # Blog (full access)
+            # Blog
             PermissionCode.BLOG_VIEW, PermissionCode.BLOG_CREATE,
             PermissionCode.BLOG_EDIT, PermissionCode.BLOG_DELETE,
         ]
@@ -177,7 +177,7 @@ def seed_db():
                 if not db.query(RolePermission).filter_by(role_id=role_map["MANAGER"].id, permission_id=perm_map[p_enum.value]).first():
                      db.add(RolePermission(role_id=role_map["MANAGER"].id, permission_id=perm_map[p_enum.value]))
 
-        # EMPLOYEE - Basic permissions (own details, projects, tasks, attendance, leave, payroll)
+        # EMPLOYEE - Basic permissions
         employee_perms = [
             PermissionCode.DASHBOARD_VIEW,
             # Projects & Tasks (own/assigned)
@@ -197,18 +197,6 @@ def seed_db():
              if p_enum.value in perm_map:
                 if not db.query(RolePermission).filter_by(role_id=role_map["EMPLOYEE"].id, permission_id=perm_map[p_enum.value]).first():
                      db.add(RolePermission(role_id=role_map["EMPLOYEE"].id, permission_id=perm_map[p_enum.value]))
-
-        # CLIENT - Portal permissions (own projects, invoices)
-        client_perms = [
-            PermissionCode.DASHBOARD_VIEW,
-            PermissionCode.PROJECT_VIEW_OWN, PermissionCode.TASK_VIEW,
-            PermissionCode.INVOICE_VIEW_OWN,
-            PermissionCode.CLIENT_VIEW_OWN,
-        ]
-        for p_enum in client_perms:
-            if p_enum.value in perm_map:
-                if not db.query(RolePermission).filter_by(role_id=role_map["CLIENT"].id, permission_id=perm_map[p_enum.value]).first():
-                     db.add(RolePermission(role_id=role_map["CLIENT"].id, permission_id=perm_map[p_enum.value]))
 
         # HR - Full HR management + Projects, Tasks, Clients, Teams
         hr_perms = [
@@ -255,6 +243,22 @@ def seed_db():
             if p_enum.value in perm_map:
                 if not db.query(RolePermission).filter_by(role_id=role_map["HR"].id, permission_id=perm_map[p_enum.value]).first():
                      db.add(RolePermission(role_id=role_map["HR"].id, permission_id=perm_map[p_enum.value]))
+
+        # CLIENT - Minimal permissions (view own data only)
+        client_perms = [
+            PermissionCode.DASHBOARD_VIEW,
+            # Projects & Tasks (own/assigned)
+            PermissionCode.PROJECT_VIEW,
+            PermissionCode.TASK_VIEW,
+            # Clients (view own profile)
+            PermissionCode.CLIENT_VIEW,
+            # Invoices (view)
+            PermissionCode.INVOICE_VIEW,
+        ]
+        for p_enum in client_perms:
+            if p_enum.value in perm_map:
+                if not db.query(RolePermission).filter_by(role_id=role_map["CLIENT"].id, permission_id=perm_map[p_enum.value]).first():
+                    db.add(RolePermission(role_id=role_map["CLIENT"].id, permission_id=perm_map[p_enum.value]))
 
         db.commit()
 
@@ -306,13 +310,11 @@ def seed_db():
                      db.add(desig)
                      db.commit()
                      db.refresh(desig)
-                     # print(f"    + Designation: {des_name}") # Optional logging
                  desig_map[des_name] = desig
                  
-        # 7. Create Users AND Employees
-        print("\nStep 7: Creating Users & Employees...")
+        # 7. Create Admin Users & Employee Profiles (NO client users)
+        print("\nStep 7: Creating Admin Users & Employees...")
         
-        # Define users to create
         users_to_create = [
             {
                 "email": "admin@ayatiworks.com", "password": "admin123", "role": "SUPER_ADMIN", 
@@ -322,7 +324,6 @@ def seed_db():
                 "email": "admin1@ayatiworks.com", "password": "admin123", "role": "ADMIN", 
                 "first": "Tech", "last": "Admin", "dept": "Management", "desig": "CTO"
             },
-           
         ]
         
         for u_data in users_to_create:
@@ -359,62 +360,25 @@ def seed_db():
                     branch_id=branch.id,
                     department_id=dept.id if dept else None,
                     designation_id=desig.id if desig else None,
-                    joining_date=date.today() - timedelta(days=365), # Joined 1 year ago
-                    employment_status=EmploymentStatus.ACTIVE.value, # Status is stored as string in model, using value
+                    joining_date=date.today() - timedelta(days=365),
+                    employment_status=EmploymentStatus.ACTIVE.value,
                     employment_type=EmploymentType.FULL_TIME.value
                 )
                 db.add(employee)
                 db.commit()
                 print(f"    -> Linked Employee Profile: {u_data['dept']} / {u_data['desig']}")
-        
-        # 8. Create Client User & Profile
-        print("\nStep 8: Creating Client...")
-        client_email = "client@demo.com"
-        client_user = db.query(User).filter_by(email=client_email).first()
-        if not client_user:
-             client_user = User(
-                email=client_email,
-                password_hash=hash_password("client123"),
-                first_name="Demo",
-                last_name="Client",
-                role_id=role_map["CLIENT"].id,
-                company_id=company.id,
-                branch_id=branch.id,
-                is_active=True,
-                is_verified=True
-            )
-             db.add(client_user)
-             db.commit()
-             db.refresh(client_user)
-             print(f"  Created User: {client_email}")
-        
-        # Client Profile
-        from app.models.client import Client
-        client_profile = db.query(Client).filter_by(email=client_email).first()
-        if not client_profile:
-             client_profile = Client(
-                 name="Acme Corp",
-                 email=client_email,
-                 phone="555-0199",
-                 company_id=company.id,
-                 address="123 Client St",
-                 status="active"
-             )
-             db.add(client_profile)
-             db.commit()
-             print("    -> Created Client Profile: Acme Corp")
 
         print("\n" + "=" * 60)
         print("DATABASE SEEDING COMPLETED SUCCESSFULLY!")
         print("=" * 60)
-        print("\nDEMO CREDENTIALS:")
+        print("\nADMIN CREDENTIALS:")
         print("-" * 60) 
         print(f"  {'ROLE':<15} | {'EMAIL':<25} | {'PASSWORD'}")
         print("-" * 60)
         for u in users_to_create:
              print(f"  {u['role']:<15} | {u['email']:<25} | {u['password']}")
-        print(f"  {'CLIENT':<15} | {'client@demo.com':<25} | client123")
         print("-" * 60)
+        print("\nNOTE: Only SUPER_ADMIN and ADMIN can login.")
     except Exception as e:
         print(f"\nError seeding database: {e}")
         import traceback

@@ -51,6 +51,7 @@ class Client(BaseModel, AuditMixin):
 
     # Basic Info
     name = Column(String(255), nullable=False)
+    slug = Column(String(255), unique=True, nullable=True, index=True)
     code = Column(String(50), unique=True, nullable=True, index=True)
     company_name = Column(String(255), nullable=True)
 
@@ -86,6 +87,9 @@ class Client(BaseModel, AuditMixin):
 
     # Tags
     tags = Column(JSON, nullable=True)
+
+    # API Key for external access (auto-generated, unique per client)
+    api_key = Column(String(64), unique=True, nullable=True, index=True)
 
     # Relationships
     contacts = relationship("ClientContact", back_populates="client", cascade="all, delete-orphan")

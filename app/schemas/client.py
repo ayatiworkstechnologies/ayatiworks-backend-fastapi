@@ -1,5 +1,6 @@
 """
 Client and CRM schemas.
+Client schemas now use employee-based fields since clients are employees with CLIENT role.
 """
 
 from datetime import date
@@ -8,47 +9,36 @@ from pydantic import EmailStr, Field, field_validator
 
 from app.schemas.common import BaseSchema, TimestampSchema
 
-# ============== Client Schemas ==============
 
-class ClientBase(BaseSchema):
-    """Client base schema."""
+# ============== Client Schemas (Employee-based) ==============
 
-    name: str = Field(..., min_length=2, max_length=255)
+class ClientCreate(BaseSchema):
+    """Client create schema — creates a User + Employee with CLIENT role."""
+
+    # Required user fields
+    first_name: str = Field(..., min_length=2, max_length=100)
+    last_name: str | None = None
+    email: EmailStr
+    password: str | None = None
+    phone: str | None = None
+
+    # Employee organization fields
+    company_id: int | None = None
+    department_id: int | None = None
+    designation_id: int | None = None
+    joining_date: date = Field(default_factory=date.today)
+    employment_type: str | None = "contract"
+    work_mode: str | None = "remote"
+
+    # CRM company fields (optional)
     company_name: str | None = None
-    email: EmailStr | None = None
-    phone: str | None = None
-
-
-class ClientContactCreate(BaseSchema):
-    """Client contact creation schema."""
-    name: str = Field(..., min_length=2, max_length=100)
-    email: EmailStr | None = None
-    phone: str | None = None
-    designation: str | None = None
-    is_primary: bool = False
-
-
-class ClientCreate(ClientBase):
-    """Client create schema."""
-
-    code: str | None = None
-    website: str | None = None
+    industry: str | None = None
     address: str | None = None
     city: str | None = None
     state: str | None = None
     country: str | None = None
-    postal_code: str | None = None
-    industry: str | None = None
-    company_size: str | None = None
-    annual_revenue: float | None = None
-    tax_id: str | None = None
-    manager_id: int | None = None
-    source: str | None = None
-    source: str | None = None
-    tags: list[str] | None = None
-    contacts: list[ClientContactCreate] | None = None
 
-    @field_validator('manager_id', mode='before')
+    @field_validator('company_id', 'department_id', 'designation_id', mode='before')
     @classmethod
     def empty_str_to_none(cls, v):
         if v == '' or v is None:
@@ -59,24 +49,28 @@ class ClientCreate(ClientBase):
 class ClientUpdate(BaseSchema):
     """Client update schema."""
 
-    name: str | None = None
-    company_name: str | None = None
+    # User fields
+    first_name: str | None = None
+    last_name: str | None = None
     email: EmailStr | None = None
     phone: str | None = None
-    website: str | None = None
+
+    # Employee fields
+    department_id: int | None = None
+    designation_id: int | None = None
+    manager_id: int | None = None
+    status: str | None = None
+
+    # CRM company fields
+    company_name: str | None = None
+    industry: str | None = None
     address: str | None = None
     city: str | None = None
     state: str | None = None
     country: str | None = None
-    industry: str | None = None
-    company_size: str | None = None
-    annual_revenue: float | None = None
-    tax_id: str | None = None
-    manager_id: int | None = None
-    status: str | None = None
     tags: list[str] | None = None
 
-    @field_validator('manager_id', mode='before')
+    @field_validator('department_id', 'designation_id', 'manager_id', mode='before')
     @classmethod
     def empty_str_to_none(cls, v):
         if v == '' or v is None:
@@ -84,36 +78,53 @@ class ClientUpdate(BaseSchema):
         return v
 
 
-class ClientResponse(ClientBase, TimestampSchema):
-    """Client response schema."""
+class ClientResponse(TimestampSchema):
+    """Client response schema — employee with CLIENT role."""
 
     id: int
-    code: str | None = None
-    website: str | None = None
-    address: str | None = None
-    city: str | None = None
-    state: str | None = None
-    country: str | None = None
-    industry: str | None = None
-    company_size: str | None = None
-    annual_revenue: float | None = None
-    tax_id: str | None = None
-    manager_id: int | None = None
-    status: str
+    employee_code: str
+    first_name: str
+    last_name: str | None = None
+    email: str
+    phone: str | None = None
+    avatar: str | None = None
 
-    # Counts
-    project_count: int = 0
-    invoice_count: int = 0
+    # Organization
+    department_id: int | None = None
+    designation_id: int | None = None
+    department_name: str | None = None
+    designation_name: str | None = None
+    company_id: int | None = None
+    company_name: str | None = None
+
+    # Employment
+    joining_date: date | None = None
+    employment_status: str | None = None
+    is_active: bool = True
+    status: str = "active"
+
+    # CRM Client profile ID (for modules, mail, etc.)
+    crm_client_id: int | None = None
+    crm_client_slug: str | None = None
 
 
 class ClientListResponse(BaseSchema):
-    """Client list item."""
+    """Client list item — employee with CLIENT role."""
 
     id: int
-    name: str
-    company_name: str | None = None
-    email: str | None = None
-    status: str
+    employee_code: str
+    first_name: str
+    last_name: str | None = None
+    email: str
+    avatar: str | None = None
+    department_name: str | None = None
+    designation_name: str | None = None
+    status: str = "active"
+    is_active: bool = True
+
+    # CRM Client profile ID (for modules, mail, etc.)
+    crm_client_id: int | None = None
+    crm_client_slug: str | None = None
 
 
 # ============== Lead Schemas ==============
@@ -212,4 +223,3 @@ class DealResponse(TimestampSchema):
     # Display
     client_name: str | None = None
     owner_name: str | None = None
-

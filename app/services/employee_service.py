@@ -21,11 +21,13 @@ class EmployeeService:
     def __init__(self, db: Session):
         self.db = db
 
-    def generate_employee_code(self) -> str:
+    def generate_employee_code(self, prefix: str = None) -> str:
         """
         Generate next employee code in format AW0001, AW0002, etc.
+        For clients, pass prefix='AWC' to generate AWC001, AWC002, etc.
         """
-        prefix = settings.EMPLOYEE_ID_PREFIX
+        if prefix is None:
+            prefix = settings.EMPLOYEE_ID_PREFIX
         length = settings.EMPLOYEE_ID_LENGTH
 
         # Get the last employee code

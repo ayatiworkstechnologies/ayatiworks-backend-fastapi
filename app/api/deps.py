@@ -6,7 +6,7 @@ Common dependencies for route handlers.
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.feature_control import is_feature_enabled
 from app.core.permissions import check_permission
@@ -50,7 +50,9 @@ async def get_current_user(
             detail="Invalid token payload"
         )
 
-    user = db.query(User).filter(
+    user = db.query(User).options(
+        joinedload(User.role)
+    ).filter(
         User.id == int(user_id),
         User.is_deleted == False
     ).first()
@@ -101,27 +103,26 @@ async def get_optional_user(
     if not user_id:
         return None
 
-    return db.query(User).filter(
+    return db.query(User).options(
+        joinedload(User.role)
+    ).filter(
         User.id == int(user_id),
         User.is_deleted == False
     ).first()
 
 
 def get_user_permissions(user: User, db: Session) -> list[str]:
-    """Get all permission codes for a user."""
+    """Get all permission codes for a user (optimized with eager loading)."""
     if not user.role_id:
         return []
 
-    role_permissions = db.query(RolePermission).filter(
+    role_permissions = db.query(RolePermission).options(
+        joinedload(RolePermission.permission)
+    ).filter(
         RolePermission.role_id == user.role_id
     ).all()
 
-    permissions = []
-    for rp in role_permissions:
-        if rp.permission:
-            permissions.append(rp.permission.code)
-
-    return permissions
+    return [rp.permission.code for rp in role_permissions if rp.permission]
 
 
 class PermissionChecker:

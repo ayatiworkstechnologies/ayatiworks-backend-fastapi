@@ -100,7 +100,6 @@ class PermissionCode(str, Enum):
     # Project
     PROJECT_VIEW = "project.view"
     PROJECT_VIEW_ALL = "project.view_all"
-    PROJECT_VIEW_OWN = "project.view_own"
     PROJECT_CREATE = "project.create"
     PROJECT_EDIT = "project.edit"
     PROJECT_DELETE = "project.delete"
@@ -122,7 +121,6 @@ class PermissionCode(str, Enum):
 
     # Client
     CLIENT_VIEW = "client.view"
-    CLIENT_VIEW_OWN = "client.view_own"
     CLIENT_CREATE = "client.create"
     CLIENT_EDIT = "client.edit"
     CLIENT_DELETE = "client.delete"
@@ -141,7 +139,6 @@ class PermissionCode(str, Enum):
 
     # Invoice
     INVOICE_VIEW = "invoice.view"
-    INVOICE_VIEW_OWN = "invoice.view_own"
     INVOICE_CREATE = "invoice.create"
     INVOICE_EDIT = "invoice.edit"
     INVOICE_DELETE = "invoice.delete"
@@ -263,7 +260,6 @@ def get_all_permissions() -> list[dict]:
         # Project
         {"code": "project.view", "name": "View Own Projects", "module": "project"},
         {"code": "project.view_all", "name": "View All Projects", "module": "project"},
-        {"code": "project.view_own", "name": "View Assigned Projects (Client)", "module": "project"},
         {"code": "project.create", "name": "Create Projects", "module": "project"},
         {"code": "project.edit", "name": "Edit Projects", "module": "project"},
         {"code": "project.delete", "name": "Delete Projects", "module": "project"},
@@ -285,14 +281,12 @@ def get_all_permissions() -> list[dict]:
 
         # Client
         {"code": "client.view", "name": "View Clients", "module": "client"},
-        {"code": "client.view_own", "name": "View Own Client Profile", "module": "client"},
         {"code": "client.create", "name": "Create Clients", "module": "client"},
         {"code": "client.edit", "name": "Edit Clients", "module": "client"},
         {"code": "client.delete", "name": "Delete Clients", "module": "client"},
 
         # Invoice
         {"code": "invoice.view", "name": "View Invoices", "module": "invoice"},
-        {"code": "invoice.view_own", "name": "View Own Invoices", "module": "invoice"},
         {"code": "invoice.create", "name": "Create Invoices", "module": "invoice"},
         {"code": "invoice.edit", "name": "Edit Invoices", "module": "invoice"},
         {"code": "invoice.delete", "name": "Delete Invoices", "module": "invoice"},

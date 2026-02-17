@@ -22,7 +22,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy and install requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir gunicorn
 
 
 # Stage 2: Production stage
@@ -56,17 +57,26 @@ RUN mkdir -p /app/uploads
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    ENVIRONMENT=production
 
 # Expose port
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health/live || exit 1
 
-# Run with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Production: Gunicorn + Uvicorn workers for multi-core performance
+CMD ["gunicorn", "app.main:app", \
+    "--bind", "0.0.0.0:8000", \
+    "--worker-class", "uvicorn.workers.UvicornWorker", \
+    "--workers", "4", \
+    "--timeout", "120", \
+    "--graceful-timeout", "30", \
+    "--keep-alive", "5", \
+    "--access-logfile", "-", \
+    "--error-logfile", "-"]
 
 
 # Stage 3: Development stage (optional)
