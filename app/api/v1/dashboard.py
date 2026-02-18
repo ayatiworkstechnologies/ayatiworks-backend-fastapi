@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user
 from app.database import get_db
+
+from alembic import command
+from alembic.config import Config
 from app.models.attendance import Attendance
 from app.models.auth import User
 from app.models.client import Client
@@ -788,4 +791,24 @@ def get_dashboard_charts(
         ]
 
     return charts
+
+
+@router.post("/migrate")
+def run_db_migration(
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Run database migrations programmatically.
+    Use this to fix 500 errors on live server if shell access is unavailable.
+    """
+    if current_user.role.code != "SUPER_ADMIN":
+        return {"status": "error", "message": "Unauthorized"}
+    
+    try:
+        # Assuming alembic.ini is in the root of the backend folder (CWD)
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        return {"status": "success", "message": "Database migration applied successfully."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
