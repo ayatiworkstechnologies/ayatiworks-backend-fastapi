@@ -589,15 +589,13 @@ async def public_create_record(
             ).first()
 
             if template:
-                # 2. Find Recipient Email
+                # Find recipient email (flexible search)
                 to_email = None
-                # Priority 1: 'email' key
-                for key, value in record.data.items():
-                    if key.lower() == 'email' and isinstance(value, str) and '@' in value:
-                        to_email = value
+                for key in ["email", "to_email", "contact_email", "recipient_email"]:
+                    if key in record.data and record.data[key]:
+                        to_email = record.data[key]
                         break
                 
-                # Priority 2: Any field with 'email' in key or value looks like email
                 if not to_email:
                     for key, value in record.data.items():
                          if isinstance(value, str) and '@' in value and '.' in value:
@@ -623,6 +621,32 @@ async def public_create_record(
 
                     if to_email:
                         # 4. Send Email (Copy of public_send_email logic)
+                        # Extract dynamic CC/BCC from record keys
+                        dynamic_cc = []
+                        for k in ["cc", "cc_email", "copy", "css_email"]: # Added css_email per user hint
+                            if k in record.data and record.data[k]:
+                                val = record.data[k]
+                                if isinstance(val, str):
+                                    dynamic_cc.extend([e.strip() for e in val.split(',') if e.strip()])
+                                elif isinstance(val, list):
+                                    dynamic_cc.extend([str(v) for v in val])
+                        
+                        dynamic_bcc = []
+                        for k in ["bcc", "bcc_email"]:
+                            if k in record.data and record.data[k]:
+                                val = record.data[k]
+                                if isinstance(val, str):
+                                    dynamic_bcc.extend([e.strip() for e in val.split(',') if e.strip()])
+                                elif isinstance(val, list):
+                                    dynamic_bcc.extend([str(v) for v in val])
+
+                        final_cc = (template.cc_email or []) + dynamic_cc
+                        final_bcc = (template.bcc_email or []) + dynamic_bcc
+                        
+                        # Remove duplicates
+                        final_cc = list(set(final_cc))
+                        final_bcc = list(set(final_bcc))
+
                         smtp_config = db.query(ClientSmtpConfig).filter(
                             ClientSmtpConfig.client_id == client.id,
                             ClientSmtpConfig.is_deleted == False
@@ -635,8 +659,8 @@ async def public_create_record(
                                 to_email=to_email,
                                 subject=subject,
                                 html_content=html_body,
-                                cc=template.cc_email,
-                                bcc=template.bcc_email
+                                cc=final_cc,
+                                bcc=final_bcc
                             )
                         else:
                             # Client Custom SMTP
@@ -656,14 +680,14 @@ async def public_create_record(
                             msg["From"] = from_display
                             msg["To"] = to_email
 
-                            if template.cc_email:
-                                msg["Cc"] = ", ".join(template.cc_email)
+                            if final_cc:
+                                msg["Cc"] = ", ".join(final_cc)
                             
                             recipients = [to_email]
-                            if template.cc_email:
-                                recipients.extend(template.cc_email)
-                            if template.bcc_email:
-                                recipients.extend(template.bcc_email)
+                            if final_cc:
+                                recipients.extend(final_cc)
+                            if final_bcc:
+                                recipients.extend(final_bcc)
 
                             msg.attach(MIMEText(wrapped_body, "html"))
 

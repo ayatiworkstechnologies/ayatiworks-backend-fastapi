@@ -51,6 +51,7 @@ class ClientMailTemplateCreate(BaseSchema):
     name: str = Field(..., min_length=1, max_length=255)
     subject: str = Field(..., min_length=1, max_length=500)
     html_body: str = Field(..., min_length=1)
+    to_email: str | None = None
     from_email: EmailStr | None = None
     cc_email: list[EmailStr] | None = None
     bcc_email: list[EmailStr] | None = None
@@ -62,6 +63,7 @@ class ClientMailTemplateUpdate(BaseSchema):
     name: str | None = None
     subject: str | None = None
     html_body: str | None = None
+    to_email: str | None = None
     from_email: EmailStr | None = None
     cc_email: list[EmailStr] | None = None
     bcc_email: list[EmailStr] | None = None
@@ -75,6 +77,7 @@ class ClientMailTemplateResponse(TimestampSchema):
     name: str
     subject: str
     html_body: str
+    to_email: str | None = None
     from_email: str | None = None
     cc_email: list[str] | None = None
     bcc_email: list[str] | None = None
@@ -99,6 +102,7 @@ class ClientSendEmailRequest(BaseSchema):
     subject: str | None = None  # Override template subject
     html_body: str | None = None  # Override template body (for custom emails)
     variables: dict[str, str] | None = None  # Variable substitution
+    from_email: EmailStr | None = None
     cc: list[EmailStr] | None = None
     bcc: list[EmailStr] | None = None
 

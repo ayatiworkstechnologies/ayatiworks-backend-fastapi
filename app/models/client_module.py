@@ -55,6 +55,7 @@ class ClientMailTemplate(BaseModel, AuditMixin):
     
     # Optional overrides
     from_email = Column(String(255), nullable=True)
+    to_email = Column(String(500), nullable=True)
     cc_email = Column(JSON, nullable=True, default=list) # List of strings
     bcc_email = Column(JSON, nullable=True, default=list) # List of strings
 

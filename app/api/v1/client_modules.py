@@ -148,6 +148,47 @@ async def create_or_update_smtp_config(
     )
 
 
+
+@router.post("/clients/{client_id}/smtp/test", response_model=MessageResponse)
+async def test_smtp_config(
+    client_id: int,
+    data: ClientSmtpConfigCreate,
+    current_user: User = Depends(PermissionChecker("mail.manage")),
+    db: Session = Depends(get_db),
+):
+    """Test SMTP configuration by attempting to connect and login."""
+    _get_client_or_404(client_id, db)
+
+    try:
+        # Create SSL context (ignore cert errors for broader compatibility if needed, or default)
+        context = ssl.create_default_context()
+        
+        server = None
+        try:
+            if data.port == 465:
+                server = smtplib.SMTP_SSL(data.host, data.port, context=context)
+            else:
+                server = smtplib.SMTP(data.host, data.port)
+                if data.use_tls:
+                    server.starttls(context=context)
+            
+            # Login
+            server.login(data.username, data.password)
+        finally:
+            if server:
+                server.quit()
+        
+        return MessageResponse(message="SMTP connection successful!")
+
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=400, detail="Authentication failed. Check username and password.")
+    except smtplib.SMTPConnectError:
+        raise HTTPException(status_code=400, detail="Could not connect to the server. Check host and port.")
+    except Exception as e:
+        logger.error(f"SMTP Test Error: {e}")
+        raise HTTPException(status_code=400, detail=f"Connection failed: {str(e)}")
+
+
 @router.delete("/clients/{client_id}/smtp", response_model=MessageResponse)
 async def delete_smtp_config(
     client_id: int,
@@ -226,6 +267,7 @@ async def get_mail_template(
         name=template.name,
         subject=template.subject,
         html_body=template.html_body,
+        to_email=template.to_email,
         from_email=template.from_email,
         cc_email=template.cc_email,
         bcc_email=template.bcc_email,
@@ -260,6 +302,7 @@ async def create_mail_template(
         name=template.name,
         subject=template.subject,
         html_body=template.html_body,
+        to_email=template.to_email,
         from_email=template.from_email,
         cc_email=template.cc_email,
         bcc_email=template.bcc_email,
@@ -300,6 +343,7 @@ async def update_mail_template(
         name=template.name,
         subject=template.subject,
         html_body=template.html_body,
+        to_email=template.to_email,
         from_email=template.from_email,
         cc_email=template.cc_email,
         bcc_email=template.bcc_email,
@@ -364,6 +408,9 @@ async def send_client_email(
 
         subject = data.subject or template.subject
         html_body = data.html_body or template.html_body
+        template_from_email = template.from_email  # Capture template sender
+    else:
+        template_from_email = None
 
     if not subject or not html_body:
         raise HTTPException(status_code=400, detail="Subject and body are required")
@@ -415,8 +462,15 @@ async def send_client_email(
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
+        
+        # Determine sender: SMTP Config only (User requested "never from mail")
+        # effective_from = data.from_email or template_from_email
+        # if effective_from:
+        #     msg["From"] = effective_from
+        # else:
         from_display = f"{smtp_config.from_name} <{smtp_config.from_email}>" if smtp_config.from_name else smtp_config.from_email
         msg["From"] = from_display
+            
         msg["To"] = data.to_email
 
         if data.cc:
