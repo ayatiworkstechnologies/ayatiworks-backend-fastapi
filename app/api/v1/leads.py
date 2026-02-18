@@ -34,9 +34,11 @@ async def list_leads(
     query = db.query(Lead).filter(Lead.is_deleted == False)
 
     # Role-based filtering for Clients
-    if current_user.role and current_user.role.code == 'client':
-        # Find client by user email
-        client = db.query(Client).filter(Client.email == current_user.email).first()
+    if current_user.role and current_user.role.code == 'CLIENT':
+        # Find client by user_id first, then email
+        client = db.query(Client).filter(Client.user_id == current_user.id).first()
+        if not client and current_user.email:
+            client = db.query(Client).filter(Client.email == current_user.email).first()
         if client:
             query = query.filter(Lead.client_id == client.id)
         else:

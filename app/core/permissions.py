@@ -125,6 +125,10 @@ class PermissionCode(str, Enum):
     CLIENT_EDIT = "client.edit"
     CLIENT_DELETE = "client.delete"
 
+    # Client Portal
+    PORTAL_VIEW = "portal.view"
+    PORTAL_MANAGE = "portal.manage"
+
     # Lead
     LEAD_VIEW = "lead.view"
     LEAD_CREATE = "lead.create"
@@ -166,6 +170,17 @@ class PermissionCode(str, Enum):
     BLOG_CREATE = "blog.create"
     BLOG_EDIT = "blog.edit"
     BLOG_DELETE = "blog.delete"
+
+    # Client Module
+    MODULE_VIEW = "module.view"
+    MODULE_CREATE = "module.create"
+    MODULE_EDIT = "module.edit"
+    MODULE_DELETE = "module.delete"
+
+    # Client Mail
+    MAIL_VIEW = "mail.view"
+    MAIL_SEND = "mail.send"
+    MAIL_MANAGE = "mail.manage"
 
 
 def get_all_permissions() -> list[dict]:
@@ -285,6 +300,10 @@ def get_all_permissions() -> list[dict]:
         {"code": "client.edit", "name": "Edit Clients", "module": "client"},
         {"code": "client.delete", "name": "Delete Clients", "module": "client"},
 
+        # Client Portal
+        {"code": "portal.view", "name": "View Client Portal", "module": "portal"},
+        {"code": "portal.manage", "name": "Manage Portal Settings", "module": "portal"},
+
         # Invoice
         {"code": "invoice.view", "name": "View Invoices", "module": "invoice"},
         {"code": "invoice.create", "name": "Create Invoices", "module": "invoice"},
@@ -308,6 +327,17 @@ def get_all_permissions() -> list[dict]:
         {"code": "blog.create", "name": "Create Blog Posts", "module": "blog"},
         {"code": "blog.edit", "name": "Edit Blog Posts", "module": "blog"},
         {"code": "blog.delete", "name": "Delete Blog Posts", "module": "blog"},
+
+        # Client Module
+        {"code": "module.view", "name": "View Client Modules", "module": "module"},
+        {"code": "module.create", "name": "Create Client Modules", "module": "module"},
+        {"code": "module.edit", "name": "Edit Client Modules", "module": "module"},
+        {"code": "module.delete", "name": "Delete Client Modules", "module": "module"},
+
+        # Client Mail
+        {"code": "mail.view", "name": "View Client Mails", "module": "mail"},
+        {"code": "mail.send", "name": "Send Client Mails", "module": "mail"},
+        {"code": "mail.manage", "name": "Manage Mail Templates & SMTP", "module": "mail"},
     ]
     return permissions
 

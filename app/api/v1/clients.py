@@ -37,13 +37,18 @@ def _get_client_role(db: Session) -> Role | None:
 
 def _build_client_response(employee: Employee, db: Session) -> ClientResponse:
     """Build a ClientResponse from an Employee model."""
-    # Check if there's a CRM Client profile linked via email
+    # Check if there's a CRM Client profile linked via user_id or email
     client_profile = None
-    if employee.user and employee.user.email:
+    if employee.user:
         client_profile = db.query(Client).filter(
-            Client.email == employee.user.email,
+            Client.user_id == employee.user.id,
             Client.is_deleted == False,
         ).first()
+        if not client_profile and employee.user.email:
+            client_profile = db.query(Client).filter(
+                Client.email == employee.user.email,
+                Client.is_deleted == False,
+            ).first()
 
     return ClientResponse(
         id=employee.id,
@@ -267,6 +272,7 @@ async def create_client(
         state=data.state,
         country=data.country,
         status="active",
+        user_id=user.id,
         manager_id=employee.id,
         created_by=current_user.id,
     )
@@ -353,9 +359,14 @@ async def update_client(
     crm_data = {k: v for k, v in update_data.items() if k in crm_fields}
     if crm_data and employee.user:
         client_profile = db.query(Client).filter(
-            Client.email == employee.user.email,
+            Client.user_id == employee.user.id,
             Client.is_deleted == False,
         ).first()
+        if not client_profile and employee.user.email:
+            client_profile = db.query(Client).filter(
+                Client.email == employee.user.email,
+                Client.is_deleted == False,
+            ).first()
         if client_profile:
             for field, value in crm_data.items():
                 setattr(client_profile, field, value)

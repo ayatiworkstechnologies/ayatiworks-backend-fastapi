@@ -25,6 +25,14 @@ from app.models.project import Project, ProjectMember, Task, TaskStatus
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
+def _find_client_for_user(db: Session, user: User):
+    """Find CRM Client record for a user — try user_id first, then email."""
+    client = db.query(Client).filter(Client.user_id == user.id).first()
+    if not client and user.email:
+        client = db.query(Client).filter(Client.email == user.email).first()
+    return client
+
+
 @router.get("/stats")
 def get_dashboard_stats(
     db: Session = Depends(get_db),
@@ -71,7 +79,7 @@ def get_my_portal(
     """
     from fastapi import HTTPException
 
-    client = db.query(Client).filter(Client.email == current_user.email).first()
+    client = _find_client_for_user(db, current_user)
 
     if not client:
         raise HTTPException(status_code=404, detail="No client profile found for your account.")
@@ -107,7 +115,7 @@ def get_project_overview(
 
     # If client, filter by client
     if current_user.role and current_user.role.code == "CLIENT":
-        client = db.query(Client).filter(Client.email == current_user.email).first()
+        client = _find_client_for_user(db, current_user)
         if client:
             base_filter.append(Project.client_id == client.id)
         else:
@@ -346,7 +354,7 @@ def _get_employee_stats(db: Session, user: User) -> dict[str, Any]:
 def _get_client_stats(db: Session, user: User) -> dict[str, Any]:
     """Stats for Client role."""
     # Find client record linked to this user
-    client = db.query(Client).filter(Client.email == user.email).first()
+    client = _find_client_for_user(db, user)
 
     if not client:
         return {
@@ -423,7 +431,7 @@ def get_recent_activity(
             )
         )
     elif role_code == "CLIENT":
-        client = db.query(Client).filter(Client.email == current_user.email).first()
+        client = _find_client_for_user(db, current_user)
         if client:
             project_query = project_query.filter(Project.client_id == client.id)
         else:
@@ -609,7 +617,7 @@ def get_dashboard_charts(
 
     # --- CLIENT ---
     elif role_code == "CLIENT":
-        client = db.query(Client).filter(Client.email == current_user.email).first()
+        client = _find_client_for_user(db, current_user)
         if client:
             # 1. Spending Trend
             invoices = db.query(Invoice).filter(

@@ -75,6 +75,9 @@ class Client(BaseModel, AuditMixin):
     # Tax Info
     tax_id = Column(String(50), nullable=True)
 
+    # User link (for portal access)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True, index=True)
+
     # Assignment
     manager_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)

@@ -244,16 +244,39 @@ def seed_db():
                 if not db.query(RolePermission).filter_by(role_id=role_map["HR"].id, permission_id=perm_map[p_enum.value]).first():
                      db.add(RolePermission(role_id=role_map["HR"].id, permission_id=perm_map[p_enum.value]))
 
-        # CLIENT - Minimal permissions (view own data only)
+        # CLIENT - Full client portal access (view own data + manage own modules/mail)
         client_perms = [
             PermissionCode.DASHBOARD_VIEW,
+            # Portal
+            PermissionCode.PORTAL_VIEW,
+            PermissionCode.PORTAL_MANAGE,
             # Projects & Tasks (own/assigned)
             PermissionCode.PROJECT_VIEW,
             PermissionCode.TASK_VIEW,
-            # Clients (view own profile)
+            PermissionCode.TASK_CREATE,
+            # Clients (own profile)
             PermissionCode.CLIENT_VIEW,
-            # Invoices (view)
+            PermissionCode.CLIENT_EDIT,
+            # Client Modules (full CRUD for own modules)
+            PermissionCode.MODULE_VIEW,
+            PermissionCode.MODULE_CREATE,
+            PermissionCode.MODULE_EDIT,
+            PermissionCode.MODULE_DELETE,
+            # Client Mail
+            PermissionCode.MAIL_VIEW,
+            PermissionCode.MAIL_SEND,
+            PermissionCode.MAIL_MANAGE,
+            # Meta Ads (own campaigns)
+            PermissionCode.META_VIEW,
+            PermissionCode.META_MANAGE,
+            # Deals (own deals)
+            PermissionCode.DEAL_VIEW,
+            # Leads (own leads)
+            PermissionCode.LEAD_VIEW,
+            # Invoices (view own)
             PermissionCode.INVOICE_VIEW,
+            # Settings (view own)
+            PermissionCode.SETTINGS_VIEW,
         ]
         for p_enum in client_perms:
             if p_enum.value in perm_map:

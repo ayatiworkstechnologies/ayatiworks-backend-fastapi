@@ -35,7 +35,9 @@ router = APIRouter(tags=["Meta Ads"])
 def _resolve_client_id(current_user: User, db: Session, client_id: int | None = None) -> int:
     """Resolve the client_id based on user role."""
     if current_user.role.code == 'CLIENT':
-        client = db.query(Client).filter(Client.email == current_user.email).first()
+        client = db.query(Client).filter(Client.user_id == current_user.id).first()
+        if not client and current_user.email:
+            client = db.query(Client).filter(Client.email == current_user.email).first()
         if not client:
             raise ResourceNotFoundError("Client Profile", "current_user")
         return client.id
