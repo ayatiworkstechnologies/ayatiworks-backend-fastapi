@@ -6,7 +6,7 @@ import os
 import shutil
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Body, File, Form, Request, UploadFile, status
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -535,7 +535,7 @@ async def public_list_records(
 async def public_create_record(
     client_slug: str,
     module_slug: str,
-    data: ClientModuleRecordCreate,
+    payload: dict = Body(...),
     client: Client = Depends(get_client_by_api_key),
     db: Session = Depends(get_db),
 ):
@@ -553,10 +553,24 @@ async def public_create_record(
     
     # Optional: Validate data against module fields here
     
+    # Determine data structure (support both {"data": {...}} and flat {...})
+    if "data" in payload and isinstance(payload["data"], dict) and len(payload) <= 2:
+        record_data = payload["data"]
+        is_active = payload.get("is_active", True)
+    else:
+        record_data = payload
+        is_active = True
+
+    # Validate required fields
+    if module.fields:
+        for field in module.fields:
+            if field.get('required') and field.get('name') not in record_data:
+                raise HTTPException(status_code=400, detail=f"Field '{field.get('label') or field.get('name')}' is required")
+
     record = ClientModuleRecord(
         module_id=module.id,
-        data=data.data,
-        is_active=data.is_active,
+        data=record_data,
+        is_active=is_active,
         # Created by is None for public API or maybe a system user? 
         # For now leaving it null or we could track it via API key if we wanted.
     )
@@ -620,7 +634,9 @@ async def public_create_record(
                             email_service.send_email(
                                 to_email=to_email,
                                 subject=subject,
-                                html_content=html_body
+                                html_content=html_body,
+                                cc=template.cc_email,
+                                bcc=template.bcc_email
                             )
                         else:
                             # Client Custom SMTP
@@ -640,6 +656,15 @@ async def public_create_record(
                             msg["From"] = from_display
                             msg["To"] = to_email
 
+                            if template.cc_email:
+                                msg["Cc"] = ", ".join(template.cc_email)
+                            
+                            recipients = [to_email]
+                            if template.cc_email:
+                                recipients.extend(template.cc_email)
+                            if template.bcc_email:
+                                recipients.extend(template.bcc_email)
+
                             msg.attach(MIMEText(wrapped_body, "html"))
 
                             context = ssl.create_default_context()
@@ -651,7 +676,7 @@ async def public_create_record(
                                     server.starttls(context=context)
 
                             server.login(smtp_config.username, smtp_config.password)
-                            server.sendmail(smtp_config.from_email, [to_email], msg.as_string())
+                            server.sendmail(smtp_config.from_email, recipients, msg.as_string())
                             server.quit()
 
         except Exception as e:

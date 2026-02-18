@@ -160,7 +160,8 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # 1. CORS (outermost - must process first)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    # allow_origins=settings.CORS_ORIGINS,  # Replaced by regex for broader support
+    allow_origin_regex="https?://.*",       # Allow all http/https origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
