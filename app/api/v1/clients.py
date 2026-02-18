@@ -121,22 +121,37 @@ async def list_clients(
     employees = query.offset(offset).limit(page_size).all()
 
     # Batch-fetch CRM Client profiles to avoid N+1 queries
+    # Try user_id first (more reliable), then fall back to email
+    employee_user_ids = [
+        emp.user.id for emp in employees
+        if emp.user
+    ]
     employee_emails = [
         emp.user.email for emp in employees
         if emp.user and emp.user.email
     ]
-    crm_clients_map = {}
+    crm_clients_by_uid = {}
+    crm_clients_by_email = {}
+    if employee_user_ids:
+        uid_clients = db.query(Client).filter(
+            Client.user_id.in_(employee_user_ids),
+            Client.is_deleted == False,
+        ).all()
+        crm_clients_by_uid = {c.user_id: c for c in uid_clients}
     if employee_emails:
-        crm_clients = db.query(Client).filter(
+        email_clients = db.query(Client).filter(
             Client.email.in_(employee_emails),
             Client.is_deleted == False,
         ).all()
-        crm_clients_map = {c.email: c for c in crm_clients}
+        crm_clients_by_email = {c.email: c for c in email_clients}
 
     items = []
     for emp in employees:
+        uid = emp.user.id if emp.user else None
         email = emp.user.email if emp.user else None
-        crm_client = crm_clients_map.get(email) if email else None
+        crm_client = crm_clients_by_uid.get(uid) if uid else None
+        if not crm_client:
+            crm_client = crm_clients_by_email.get(email) if email else None
 
         items.append(ClientListResponse(
             id=emp.id,

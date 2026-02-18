@@ -304,6 +304,18 @@ def get_all_permissions() -> list[dict]:
         {"code": "portal.view", "name": "View Client Portal", "module": "portal"},
         {"code": "portal.manage", "name": "Manage Portal Settings", "module": "portal"},
 
+        # Lead
+        {"code": "lead.view", "name": "View Leads", "module": "lead"},
+        {"code": "lead.create", "name": "Create Leads", "module": "lead"},
+        {"code": "lead.edit", "name": "Edit Leads", "module": "lead"},
+        {"code": "lead.delete", "name": "Delete Leads", "module": "lead"},
+
+        # Deal
+        {"code": "deal.view", "name": "View Deals", "module": "deal"},
+        {"code": "deal.create", "name": "Create Deals", "module": "deal"},
+        {"code": "deal.edit", "name": "Edit Deals", "module": "deal"},
+        {"code": "deal.delete", "name": "Delete Deals", "module": "deal"},
+
         # Invoice
         {"code": "invoice.view", "name": "View Invoices", "module": "invoice"},
         {"code": "invoice.create", "name": "Create Invoices", "module": "invoice"},
@@ -317,6 +329,12 @@ def get_all_permissions() -> list[dict]:
 
         # Audit
         {"code": "audit.view", "name": "View Audit Logs", "module": "audit"},
+
+        # Timesheet
+        {"code": "timesheet.view", "name": "View Own Timesheets", "module": "timesheet"},
+        {"code": "timesheet.view_all", "name": "View All Timesheets", "module": "timesheet"},
+        {"code": "timesheet.create", "name": "Create Timesheets", "module": "timesheet"},
+        {"code": "timesheet.approve", "name": "Approve Timesheets", "module": "timesheet"},
 
         # Meta Ads
         {"code": "meta.view", "name": "View Meta Ads", "module": "meta"},

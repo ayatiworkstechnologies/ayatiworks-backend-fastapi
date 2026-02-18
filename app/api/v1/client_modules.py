@@ -74,7 +74,7 @@ def _slugify(text: str) -> str:
 @router.get("/clients/{client_id}/smtp", response_model=ClientSmtpConfigResponse | None)
 async def get_smtp_config(
     client_id: int,
-    current_user: User = Depends(PermissionChecker("client.view")),
+    current_user: User = Depends(PermissionChecker("mail.view")),
     db: Session = Depends(get_db),
 ):
     """Get SMTP configuration for a client."""
@@ -105,7 +105,7 @@ async def get_smtp_config(
 async def create_or_update_smtp_config(
     client_id: int,
     data: ClientSmtpConfigCreate,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("mail.manage")),
     db: Session = Depends(get_db),
 ):
     """Create or update SMTP configuration for a client."""
@@ -151,7 +151,7 @@ async def create_or_update_smtp_config(
 @router.delete("/clients/{client_id}/smtp", response_model=MessageResponse)
 async def delete_smtp_config(
     client_id: int,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("mail.manage")),
     db: Session = Depends(get_db),
 ):
     """Delete a client's SMTP configuration (revert to system default)."""
@@ -175,7 +175,7 @@ async def list_mail_templates(
     client_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(PermissionChecker("client.view")),
+    current_user: User = Depends(PermissionChecker("mail.view")),
     db: Session = Depends(get_db),
 ):
     """List mail templates for a client."""
@@ -207,7 +207,7 @@ async def list_mail_templates(
 async def get_mail_template(
     client_id: int,
     template_id: int,
-    current_user: User = Depends(PermissionChecker("client.view")),
+    current_user: User = Depends(PermissionChecker("mail.view")),
     db: Session = Depends(get_db),
 ):
     """Get a specific mail template."""
@@ -236,7 +236,7 @@ async def get_mail_template(
 async def create_mail_template(
     client_id: int,
     data: ClientMailTemplateCreate,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("mail.manage")),
     db: Session = Depends(get_db),
 ):
     """Create a new mail template."""
@@ -268,7 +268,7 @@ async def update_mail_template(
     client_id: int,
     template_id: int,
     data: ClientMailTemplateUpdate,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("mail.manage")),
     db: Session = Depends(get_db),
 ):
     """Update a mail template."""
@@ -304,7 +304,7 @@ async def update_mail_template(
 async def delete_mail_template(
     client_id: int,
     template_id: int,
-    current_user: User = Depends(PermissionChecker("client.delete")),
+    current_user: User = Depends(PermissionChecker("mail.manage")),
     db: Session = Depends(get_db),
 ):
     """Delete a mail template."""
@@ -328,7 +328,7 @@ async def delete_mail_template(
 async def send_client_email(
     client_id: int,
     data: ClientSendEmailRequest,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("mail.send")),
     db: Session = Depends(get_db),
 ):
     """Send email using client's SMTP config and optional template."""
@@ -453,7 +453,7 @@ async def list_modules(
     client_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(PermissionChecker("client.view")),
+    current_user: User = Depends(PermissionChecker("module.view")),
     db: Session = Depends(get_db),
 ):
     """List dynamic modules for a client."""
@@ -503,7 +503,7 @@ async def list_modules(
 async def get_module(
     client_id: int,
     module_id: int,
-    current_user: User = Depends(PermissionChecker("client.view")),
+    current_user: User = Depends(PermissionChecker("module.view")),
     db: Session = Depends(get_db),
 ):
     """Get a specific module definition."""
@@ -539,7 +539,7 @@ async def get_module(
 async def create_module(
     client_id: int,
     data: ClientModuleCreate,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("module.create")),
     db: Session = Depends(get_db),
 ):
     """Create a new dynamic module with field definitions."""
@@ -590,7 +590,7 @@ async def quick_create_module(
     client_name: str,
     module_name: str,
     description: str | None = None,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("module.create")),
     db: Session = Depends(get_db),
 ):
     """
@@ -664,7 +664,7 @@ async def update_module(
     client_id: int,
     module_id: int,
     data: ClientModuleUpdate,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("module.edit")),
     db: Session = Depends(get_db),
 ):
     """Update a module definition."""
@@ -723,7 +723,7 @@ async def update_module(
 async def delete_module(
     client_id: int,
     module_id: int,
-    current_user: User = Depends(PermissionChecker("client.delete")),
+    current_user: User = Depends(PermissionChecker("module.delete")),
     db: Session = Depends(get_db),
 ):
     """Delete a module and all its records."""
@@ -764,7 +764,7 @@ async def list_module_records(
     search: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(PermissionChecker("client.view")),
+    current_user: User = Depends(PermissionChecker("module.view")),
     db: Session = Depends(get_db),
 ):
     """List records for a module (auto-generated API)."""
@@ -806,7 +806,7 @@ async def create_module_record(
     client_id: int,
     module_id: int,
     data: ClientModuleRecordCreate,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("module.create")),
     db: Session = Depends(get_db),
 ):
     """Create a record in a module (auto-generated API)."""
@@ -853,7 +853,7 @@ async def update_module_record(
     module_id: int,
     record_id: int,
     data: ClientModuleRecordUpdate,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("module.edit")),
     db: Session = Depends(get_db),
 ):
     """Update a module record."""
@@ -887,7 +887,7 @@ async def delete_module_record(
     client_id: int,
     module_id: int,
     record_id: int,
-    current_user: User = Depends(PermissionChecker("client.delete")),
+    current_user: User = Depends(PermissionChecker("module.delete")),
     db: Session = Depends(get_db),
 ):
     """Delete a module record."""
@@ -924,7 +924,7 @@ def _get_client_by_api_key(api_key: str, db: Session) -> Client:
 @router.post("/clients/{client_id}/api-key", response_model=dict)
 async def generate_api_key(
     client_id: int,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("module.edit")),
     db: Session = Depends(get_db),
 ):
     """Generate or regenerate an API key for a client."""
@@ -943,7 +943,7 @@ async def generate_api_key(
 @router.get("/clients/{client_id}/api-key", response_model=dict)
 async def get_api_key_status(
     client_id: int,
-    current_user: User = Depends(PermissionChecker("client.view")),
+    current_user: User = Depends(PermissionChecker("module.view")),
     db: Session = Depends(get_db),
 ):
     """Check if an API key exists for a client (does not reveal the key)."""
@@ -957,7 +957,7 @@ async def get_api_key_status(
 @router.delete("/clients/{client_id}/api-key", response_model=MessageResponse)
 async def revoke_api_key(
     client_id: int,
-    current_user: User = Depends(PermissionChecker("client.edit")),
+    current_user: User = Depends(PermissionChecker("module.edit")),
     db: Session = Depends(get_db),
 ):
     """Revoke (delete) the API key for a client."""

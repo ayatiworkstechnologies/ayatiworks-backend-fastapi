@@ -75,14 +75,48 @@ def get_my_portal(
 ) -> Any:
     """
     Get client portal data for the currently logged-in user.
-    Matches user by email to a Client record.
+    Matches user by user_id first, then email to a Client record.
+    Returns profile data + computed stats (modules, projects, tasks, invoices).
     """
     from fastapi import HTTPException
+    from app.models.client_module import ClientModule
 
     client = _find_client_for_user(db, current_user)
 
     if not client:
         raise HTTPException(status_code=404, detail="No client profile found for your account.")
+
+    # Computed stats
+    modules_count = db.query(ClientModule).filter(
+        ClientModule.client_id == client.id,
+        ClientModule.is_deleted == False,
+    ).count()
+
+    my_projects = db.query(Project).filter(
+        Project.client_id == client.id,
+        Project.status.in_(["active", "in_progress"]),
+    ).count()
+
+    active_tasks = db.query(Task).join(Project).filter(
+        Project.client_id == client.id,
+        Task.status.in_(["todo", "in_progress"]),
+    ).count()
+
+    open_invoices = db.query(Invoice).filter(
+        Invoice.client_id == client.id,
+        Invoice.status.in_([
+            InvoiceStatus.SENT.value,
+            InvoiceStatus.VIEWED.value,
+            InvoiceStatus.PARTIAL.value,
+            InvoiceStatus.OVERDUE.value,
+            "pending",
+        ]),
+    ).count()
+
+    total_spent = db.query(func.sum(Invoice.total)).filter(
+        Invoice.client_id == client.id,
+        Invoice.status == InvoiceStatus.PAID.value,
+    ).scalar() or 0
 
     return {
         "client_id": client.id,
@@ -99,6 +133,12 @@ def get_my_portal(
         "state": client.state,
         "country": client.country,
         "status": client.status,
+        # Computed stats
+        "modules_count": modules_count,
+        "projects_count": my_projects,
+        "active_tasks_count": active_tasks,
+        "open_invoices_count": open_invoices,
+        "total_spent": float(total_spent),
     }
 
 

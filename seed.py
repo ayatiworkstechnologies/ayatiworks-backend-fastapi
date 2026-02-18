@@ -163,9 +163,27 @@ def seed_db():
             # Payroll (own)
             PermissionCode.PAYROLL_VIEW, PermissionCode.SALARY_VIEW,
             # Clients (view & manage)
-            PermissionCode.CLIENT_VIEW,
+            PermissionCode.CLIENT_VIEW, PermissionCode.CLIENT_CREATE,
+            PermissionCode.CLIENT_EDIT, PermissionCode.CLIENT_DELETE,
+            # Leads (full CRUD)
+            PermissionCode.LEAD_VIEW, PermissionCode.LEAD_CREATE,
+            PermissionCode.LEAD_EDIT, PermissionCode.LEAD_DELETE,
+            # Deals (full CRUD)
+            PermissionCode.DEAL_VIEW, PermissionCode.DEAL_CREATE,
+            PermissionCode.DEAL_EDIT, PermissionCode.DEAL_DELETE,
+            # Client Modules (full CRUD)
+            PermissionCode.MODULE_VIEW, PermissionCode.MODULE_CREATE,
+            PermissionCode.MODULE_EDIT, PermissionCode.MODULE_DELETE,
+            # Client Mail
+            PermissionCode.MAIL_VIEW, PermissionCode.MAIL_SEND, PermissionCode.MAIL_MANAGE,
+            # Meta Ads
+            PermissionCode.META_VIEW, PermissionCode.META_MANAGE,
             # Invoices
-            PermissionCode.INVOICE_VIEW,
+            PermissionCode.INVOICE_VIEW, PermissionCode.INVOICE_CREATE,
+            PermissionCode.INVOICE_EDIT,
+            # Timesheets
+            PermissionCode.TIMESHEET_VIEW, PermissionCode.TIMESHEET_VIEW_ALL,
+            PermissionCode.TIMESHEET_CREATE, PermissionCode.TIMESHEET_APPROVE,
             # Reports
             PermissionCode.REPORT_VIEW, PermissionCode.REPORT_EXPORT,
             # Blog
@@ -230,12 +248,30 @@ def seed_db():
             # Projects & Tasks (ALL)
             PermissionCode.PROJECT_VIEW, PermissionCode.PROJECT_VIEW_ALL,
             PermissionCode.TASK_VIEW, PermissionCode.TASK_VIEW_ALL,
-            # Clients
-            PermissionCode.CLIENT_VIEW,
+            # Clients (full CRUD)
+            PermissionCode.CLIENT_VIEW, PermissionCode.CLIENT_CREATE,
+            PermissionCode.CLIENT_EDIT, PermissionCode.CLIENT_DELETE,
+            # Leads (full CRUD)
+            PermissionCode.LEAD_VIEW, PermissionCode.LEAD_CREATE,
+            PermissionCode.LEAD_EDIT, PermissionCode.LEAD_DELETE,
+            # Deals (full CRUD)
+            PermissionCode.DEAL_VIEW, PermissionCode.DEAL_CREATE,
+            PermissionCode.DEAL_EDIT, PermissionCode.DEAL_DELETE,
+            # Client Modules (full CRUD)
+            PermissionCode.MODULE_VIEW, PermissionCode.MODULE_CREATE,
+            PermissionCode.MODULE_EDIT, PermissionCode.MODULE_DELETE,
+            # Client Mail
+            PermissionCode.MAIL_VIEW, PermissionCode.MAIL_SEND, PermissionCode.MAIL_MANAGE,
+            # Meta Ads
+            PermissionCode.META_VIEW, PermissionCode.META_MANAGE,
             # Teams
             PermissionCode.TEAM_VIEW, PermissionCode.TEAM_CREATE, PermissionCode.TEAM_EDIT,
-            # Invoices
-            PermissionCode.INVOICE_VIEW,
+            # Invoices (full CRUD)
+            PermissionCode.INVOICE_VIEW, PermissionCode.INVOICE_CREATE,
+            PermissionCode.INVOICE_EDIT, PermissionCode.INVOICE_DELETE,
+            # Timesheets
+            PermissionCode.TIMESHEET_VIEW, PermissionCode.TIMESHEET_VIEW_ALL,
+            PermissionCode.TIMESHEET_CREATE, PermissionCode.TIMESHEET_APPROVE,
             # Reports
             PermissionCode.REPORT_VIEW, PermissionCode.REPORT_EXPORT,
         ]
