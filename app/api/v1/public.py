@@ -589,25 +589,29 @@ async def public_create_record(
             ).first()
 
             if template:
-                # Find recipient email (flexible search)
-                to_email = None
-                for key in ["email", "to_email", "contact_email", "recipient_email"]:
-                    if key in record.data and record.data[key]:
-                        to_email = record.data[key]
-                        break
+                # 2. Determine Recipient
+                to_email = template.to_email
+                jinja_env = Environment(loader=BaseLoader())
 
-                if not to_email:
-                    for key, value in record.data.items():
-                         if isinstance(value, str) and '@' in value and '.' in value:
-                             to_email = value
-                             break
+                # If template has a defined recipient, try to render it (handles {{email}} or static admin@example.com)
+                if to_email:
+                    try:
+                        to_email_tmpl = jinja_env.from_string(to_email)
+                        to_email = to_email_tmpl.render(**record.data).strip()
+                    except Exception as e:
+                        logger.warning(f"Failed to render to_email template '{to_email}': {e}")
+                        # If render fails but it looked like a simple email, keep it. 
+                        # If it was purely a variable {{x}} that failed, it might be empty now.
+                        pass
+
+                # Fallback 1 & 2 REMOVED: Strict adherence to Template Configuration
+                # if not to_email: ... (removed)
 
                 if to_email:
                     # 3. Render Content
                     subject = template.subject
                     html_body = template.html_body
-
-                    jinja_env = Environment(loader=BaseLoader())
+                    
                     try:
                         subject_tmpl = jinja_env.from_string(subject)
                         subject = subject_tmpl.render(**record.data)
@@ -615,33 +619,14 @@ async def public_create_record(
                         body_tmpl = jinja_env.from_string(html_body)
                         html_body = body_tmpl.render(**record.data)
                     except Exception as e:
-                        logger.error(f"Auto-email template rendering failed: {e}")
-                        # Don't fail the record creation, just log error
-                        to_email = None # Skip sending
+                        logger.error(f"Auto-email content rendering failed: {e}")
+                        to_email = None # Skip sending if content fails
 
                     if to_email:
                         # 4. Send Email (Copy of public_send_email logic)
-                        # Extract dynamic CC/BCC from record keys
-                        dynamic_cc = []
-                        for k in ["cc", "cc_email", "copy", "css_email"]: # Added css_email per user hint
-                            if k in record.data and record.data[k]:
-                                val = record.data[k]
-                                if isinstance(val, str):
-                                    dynamic_cc.extend([e.strip() for e in val.split(',') if e.strip()])
-                                elif isinstance(val, list):
-                                    dynamic_cc.extend([str(v) for v in val])
-
-                        dynamic_bcc = []
-                        for k in ["bcc", "bcc_email"]:
-                            if k in record.data and record.data[k]:
-                                val = record.data[k]
-                                if isinstance(val, str):
-                                    dynamic_bcc.extend([e.strip() for e in val.split(',') if e.strip()])
-                                elif isinstance(val, list):
-                                    dynamic_bcc.extend([str(v) for v in val])
-
-                        final_cc = (template.cc_email or []) + dynamic_cc
-                        final_bcc = (template.bcc_email or []) + dynamic_bcc
+                        # STRICT MODE: Only use Template CC/BCC
+                        final_cc = template.cc_email or []
+                        final_bcc = template.bcc_email or []
 
                         # Remove duplicates
                         final_cc = list(set(final_cc))
