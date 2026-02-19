@@ -3,7 +3,7 @@ Payroll Schemas.
 Salary structures, payslips, and payroll generation.
 """
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from pydantic import Field, field_validator

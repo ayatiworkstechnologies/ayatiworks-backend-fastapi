@@ -8,12 +8,12 @@ Uses the employees table instead of a separate clients table.
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import PermissionChecker, get_current_active_user
+from app.api.deps import PermissionChecker
 from app.core.exceptions import ResourceNotFoundError
 from app.core.security import generate_random_password, hash_password
 from app.database import get_db
 from app.models.auth import Role, User
-from app.models.client import Client, ClientContact, Deal
+from app.models.client import Client, Deal
 from app.models.employee import Employee
 from app.schemas.client import (
     ClientCreate,

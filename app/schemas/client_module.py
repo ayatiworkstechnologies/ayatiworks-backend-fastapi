@@ -181,3 +181,4 @@ class ClientModuleRecordResponse(TimestampSchema):
     id: int
     module_id: int
     data: dict = {}
+    email_sent: bool = False

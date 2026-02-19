@@ -50,6 +50,7 @@ class EmployeeCreate(EmployeeBase):
 
     # Required: either user_id or new user details
     user_id: int | None = None
+    employee_code: str | None = None
 
     # New user creation (if user_id not provided)
     email: EmailStr | None = None

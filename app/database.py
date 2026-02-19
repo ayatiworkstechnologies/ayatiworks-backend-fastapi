@@ -5,7 +5,7 @@ Optimized with connection pool tuning.
 
 import logging
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 

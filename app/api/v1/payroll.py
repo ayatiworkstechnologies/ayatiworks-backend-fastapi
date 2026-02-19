@@ -6,9 +6,9 @@ Salary structures, payslip generation, and payroll management.
 
 import calendar
 import logging
-from datetime import date, datetime
+from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session, joinedload
 

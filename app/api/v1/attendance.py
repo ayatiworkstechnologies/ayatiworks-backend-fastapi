@@ -321,7 +321,7 @@ async def create_manual_attendance(
 @router.post("/{attendance_id}/approve", response_model=AttendanceResponse)
 async def approve_attendance(
     attendance_id: int,
-    status: str = Query(..., regex="^(approved|rejected)$"),
+    status: str = Query(..., pattern="^(approved|rejected)$"),
     notes: str | None = None,
     current_user: User = Depends(PermissionChecker("attendance.approve")),
     db: Session = Depends(get_db)

@@ -597,11 +597,11 @@ def get_dashboard_charts(
     Get role-based dashboard charts data.
     """
     role_code = current_user.role.code if current_user.role else "EMPLOYEE"
-    
+
     # Common Date Range (Last 6 Months)
     today = datetime.now()
     six_months_ago = today - timedelta(days=180)
-    
+
     charts = {}
 
     # --- ADMIN / SUPER ADMIN ---
@@ -612,7 +612,7 @@ def get_dashboard_charts(
         )
         if role_code == "ADMIN":
             project_query = project_query.filter(Project.company_id == current_user.company_id)
-        
+
         project_dist = project_query.group_by(Project.status).all()
         charts["project_distribution"] = [
             {"name": status.replace("_", " ").title(), "value": count} 
@@ -627,9 +627,9 @@ def get_dashboard_charts(
         )
         if role_code == "ADMIN":
             invoice_query = invoice_query.filter(Invoice.company_id == current_user.company_id)
-            
+
         invoices = invoice_query.all()
-        
+
         # Aggregate by Month
         revenue_map = {}
         for i in range(6):
@@ -638,7 +638,7 @@ def get_dashboard_charts(
             date = today - timedelta(days=30 * i)
             key = date.strftime("%b")
             revenue_map[key] = 0
-            
+
         # Initialize map with zero (reversed order for display)
         # We need keys in chronological order
         chronological_keys = []
@@ -653,7 +653,7 @@ def get_dashboard_charts(
                 date_key = inv.updated_at.strftime("%b")
                 if date_key in revenue_map:
                     revenue_map[date_key] += inv.total
-                
+
         charts["revenue_trend"] = [
             {"name": k, "value": revenue_map[k]} for k in chronological_keys
         ]
@@ -683,17 +683,17 @@ def get_dashboard_charts(
                     k = inv.updated_at.strftime("%b")
                     if k in spending_map:
                         spending_map[k] += inv.total
-            
+
             charts["spending_trend"] = [
                 {"name": k, "value": spending_map[k]} for k in chronological_keys
             ]
-            
+
             # 2. Project Status
             proj_dist = db.query(Project.status, func.count(Project.id)).filter(
                 Project.client_id == client.id,
                 Project.is_deleted == False
             ).group_by(Project.status).all()
-            
+
             charts["project_status"] = [
                 {"name": s.replace("_", " ").title(), "value": c} for s, c in proj_dist
             ]
@@ -704,21 +704,21 @@ def get_dashboard_charts(
         if employee:
              # 1. Task Completion (Last 7 Days)
              week_ago = today - timedelta(days=7)
-             
+
              tasks_query = db.query(Task).filter(
                  Task.status == TaskStatus.DONE.value,
                  Task.updated_at >= week_ago
              )
-             
+
              if role_code == "MANAGER":
                  # Team tasks
                  tasks_query = tasks_query.filter(Task.assignee.has(Employee.manager_id == employee.id))
              else:
                  # My tasks
                  tasks_query = tasks_query.filter(Task.assignee_id == employee.id)
-                 
+
              completed_tasks = tasks_query.all()
-             
+
              # Daily aggregation
              daily_map = {}
              chronological_keys = []
@@ -728,13 +728,13 @@ def get_dashboard_charts(
                  key = dt.strftime("%a")
                  chronological_keys.append(key)
                  daily_map[key] = 0
-                 
+
              for t in completed_tasks:
                  if t.updated_at:
                      k = t.updated_at.strftime("%a")
                      if k in daily_map:
                          daily_map[k] += 1
-                         
+
              charts["task_completion"] = [
                  {"name": k, "value": daily_map[k]} for k in chronological_keys
              ]
@@ -742,13 +742,13 @@ def get_dashboard_charts(
     # --- HR ---
     elif role_code == "HR":
         company_id = current_user.company_id
-        
+
         # 1. Recruitment Trend (New Hires)
         new_hires_query = db.query(Employee).filter(
             Employee.company_id == company_id,
             Employee.joining_date >= six_months_ago.date()
         ).all()
-        
+
         hiring_map = {}
         chronological_keys = []
         for i in range(5, -1, -1):
@@ -764,28 +764,28 @@ def get_dashboard_charts(
                 k = emp.joining_date.strftime("%b")
                 if k in hiring_map:
                     hiring_map[k] += 1
-        
+
         charts["recruitment_trend"] = [
             {"name": k, "value": hiring_map[k]} for k in chronological_keys
         ]
-        
+
         # 2. Leave Trend (Approved Leaves)
         leaves_query = db.query(Leave).filter(
             Leave.company_id == company_id,
             Leave.status == "approved",
             Leave.start_date >= six_months_ago.date()
         ).all()
-        
+
         leave_map = {}
         for k in chronological_keys:
             leave_map[k] = 0
-            
+
         for leave in leaves_query:
             if leave.start_date:
                 k = leave.start_date.strftime("%b")
                 if k in leave_map:
                     leave_map[k] += 1
-                    
+
         charts["leave_trend"] = [
             {"name": k, "value": leave_map[k]} for k in chronological_keys
         ]
@@ -803,12 +803,30 @@ def run_db_migration(
     """
     if current_user.role.code != "SUPER_ADMIN":
         return {"status": "error", "message": "Unauthorized"}
-    
+
     try:
+        import os
+        cwd = os.getcwd()
+        ini_path = os.path.join(cwd, "alembic.ini")
+
+        # If not in CWD, look in parent directory (in case CWD is app/)
+        if not os.path.exists(ini_path):
+             parent = os.path.dirname(cwd)
+             ini_path_parent = os.path.join(parent, "alembic.ini")
+             if os.path.exists(ini_path_parent):
+                 ini_path = ini_path_parent
+                 # We might need to change CWD for alembic to find 'migrations' folder relative to ini
+                 os.chdir(parent)
+             else:
+                 return {
+                     "status": "error", 
+                     "message": f"alembic.ini not found in {cwd} or parent. Files in {cwd}: {os.listdir(cwd)}"
+                 }
+
         # Assuming alembic.ini is in the root of the backend folder (CWD)
-        alembic_cfg = Config("alembic.ini")
+        alembic_cfg = Config(ini_path)
         command.upgrade(alembic_cfg, "head")
         return {"status": "success", "message": "Database migration applied successfully."}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": f"Error: {str(e)} | CWD: {os.getcwd()}"}
 

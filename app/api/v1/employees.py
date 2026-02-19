@@ -192,6 +192,21 @@ async def get_employee_by_code(
     return build_employee_response(employee)
 
 
+@router.get("/next-code", response_model=dict)
+async def get_next_employee_code(
+    prefix: str | None = None,
+    current_user: User = Depends(PermissionChecker("employee.create")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the next available employee code.
+    Useful for auto-generating IDs in the frontend.
+    """
+    service = EmployeeService(db)
+    code = service.generate_employee_code(prefix=prefix)
+    return {"code": code}
+
+
 @router.post("", response_model=EmployeeResponse, status_code=status.HTTP_201_CREATED)
 async def create_employee(
     data: EmployeeCreate,

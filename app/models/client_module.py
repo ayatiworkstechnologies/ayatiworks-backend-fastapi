@@ -52,7 +52,7 @@ class ClientMailTemplate(BaseModel, AuditMixin):
     name = Column(String(255), nullable=False)
     subject = Column(String(500), nullable=False)
     html_body = Column(Text, nullable=False)
-    
+
     # Optional overrides
     from_email = Column(String(255), nullable=True)
     to_email = Column(String(500), nullable=True)

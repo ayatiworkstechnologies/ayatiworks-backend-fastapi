@@ -160,8 +160,10 @@ class EmployeeService:
             self.db.flush()
             user_id = user.id
 
-        # Generate employee code
-        employee_code = self.generate_employee_code()
+        # Use provided employee code or generate one
+        employee_code = employee_data.employee_code
+        if not employee_code:
+            employee_code = self.generate_employee_code()
 
         # Create employee with normalized FK values
         employee = Employee(

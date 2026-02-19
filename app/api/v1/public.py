@@ -342,7 +342,7 @@ async def delete_application(
 from fastapi import Header, HTTPException
 from app.models.client import Client
 from app.models.client_module import ClientModule, ClientModuleRecord, ClientSmtpConfig, ClientMailTemplate
-from app.schemas.client_module import ClientSendEmailRequest, ClientModuleRecordResponse, ClientModuleRecordCreate
+from app.schemas.client_module import ClientSendEmailRequest, ClientModuleRecordResponse
 from app.schemas.common import MessageResponse, PaginatedResponse
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -431,7 +431,7 @@ async def public_send_email(
             )
             if not success:
                raise Exception("System email service returned failure")
-            
+
             return MessageResponse(message=f"Email sent successfully via System SMTP to {data.to_email}")
         except Exception as e:
              logger.error(f"System email sending failed for client {client.id}: {e}")
@@ -512,10 +512,10 @@ async def public_list_records(
         ClientModuleRecord.is_deleted == False,
     )
     # Simple search implementation if needed later
-    
+
     total = query.count()
     records = query.order_by(ClientModuleRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    
+
     items = [
         ClientModuleRecordResponse(
             id=r.id,
@@ -550,9 +550,9 @@ async def public_create_record(
     ).first()
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
-    
+
     # Optional: Validate data against module fields here
-    
+
     # Determine data structure (support both {"data": {...}} and flat {...})
     if "data" in payload and isinstance(payload["data"], dict) and len(payload) <= 2:
         record_data = payload["data"]
@@ -595,18 +595,18 @@ async def public_create_record(
                     if key in record.data and record.data[key]:
                         to_email = record.data[key]
                         break
-                
+
                 if not to_email:
                     for key, value in record.data.items():
                          if isinstance(value, str) and '@' in value and '.' in value:
                              to_email = value
                              break
-                
+
                 if to_email:
                     # 3. Render Content
                     subject = template.subject
                     html_body = template.html_body
-                    
+
                     jinja_env = Environment(loader=BaseLoader())
                     try:
                         subject_tmpl = jinja_env.from_string(subject)
@@ -630,7 +630,7 @@ async def public_create_record(
                                     dynamic_cc.extend([e.strip() for e in val.split(',') if e.strip()])
                                 elif isinstance(val, list):
                                     dynamic_cc.extend([str(v) for v in val])
-                        
+
                         dynamic_bcc = []
                         for k in ["bcc", "bcc_email"]:
                             if k in record.data and record.data[k]:
@@ -642,7 +642,7 @@ async def public_create_record(
 
                         final_cc = (template.cc_email or []) + dynamic_cc
                         final_bcc = (template.bcc_email or []) + dynamic_bcc
-                        
+
                         # Remove duplicates
                         final_cc = list(set(final_cc))
                         final_bcc = list(set(final_bcc))
@@ -682,7 +682,7 @@ async def public_create_record(
 
                             if final_cc:
                                 msg["Cc"] = ", ".join(final_cc)
-                            
+
                             recipients = [to_email]
                             if final_cc:
                                 recipients.extend(final_cc)

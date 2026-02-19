@@ -11,7 +11,6 @@ Implements the real Meta Platforms Graph API flow:
 
 import logging
 from datetime import datetime
-from typing import Any
 
 import httpx
 

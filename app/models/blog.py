@@ -71,7 +71,7 @@ class Blog(BaseModel, AuditMixin):
     # Dynamic Sections (JSON array)
     # Each section: {"heading": "...", "content": "...(HTML)", "image": "...(optional URL)"}
     sections = Column(JSON, nullable=True)
-    
+
     # FAQs (JSON array)
     # [{"question": "...", "answer": "..."}]
     faqs = Column(JSON, nullable=True)

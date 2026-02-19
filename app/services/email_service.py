@@ -539,7 +539,7 @@ def generic_notification_email(
         'action_url': action_url,
         'action_text': 'View Details' if action_url else None
     }
-    
+
     html_content = email_service.render_template('email/notification.html', context)
     return title, html_content
 
@@ -562,6 +562,6 @@ def task_assigned_email(
         'due_date': due_date,
         'dashboard_url': f"{email_service.default_context.get('login_url', '')}/tasks"
     }
-    
+
     html_content = email_service.render_template('email/task_assigned.html', context)
     return f"New Task Assigned: {task_title}", html_content

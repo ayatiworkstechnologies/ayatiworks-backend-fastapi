@@ -355,7 +355,7 @@ async def add_project_member(
     try:
         emp_service = EmployeeService(db)
         employee = emp_service.get_by_id(data.employee_id)
-        
+
         # Get manager name
         manager_name = "N/A"
         if project.manager_id:

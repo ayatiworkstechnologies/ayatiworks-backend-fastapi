@@ -25,7 +25,7 @@ router = APIRouter(tags=["Reports & Dashboard"])
 
 @router.get("/dashboard/stats")
 async def get_report_dashboard_stats(
-    period: str = Query("month", regex="^(week|month|quarter|year)$"),
+    period: str = Query("month", pattern="^(week|month|quarter|year)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
