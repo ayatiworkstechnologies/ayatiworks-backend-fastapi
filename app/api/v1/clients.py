@@ -238,6 +238,7 @@ async def create_client(
         first_name=data.first_name,
         last_name=data.last_name,
         phone=data.phone,
+        avatar=data.avatar,
         role_id=client_role.id,
         company_id=data.company_id if data.company_id else None,
         is_active=True,
@@ -286,6 +287,13 @@ async def create_client(
         city=data.city,
         state=data.state,
         country=data.country,
+        website=data.website,
+        postal_code=data.postal_code,
+        company_size=data.company_size,
+        annual_revenue=data.annual_revenue,
+        tax_id=data.tax_id,
+        source=data.source,
+        tags=data.tags,
         status="active",
         user_id=user.id,
         manager_id=employee.id,
@@ -350,7 +358,7 @@ async def update_client(
     update_data = data.model_dump(exclude_unset=True)
 
     # Update User fields
-    user_fields = {'first_name', 'last_name', 'email', 'phone'}
+    user_fields = {'first_name', 'last_name', 'email', 'phone', 'avatar'}
     for field in user_fields:
         if field in update_data and employee.user:
             setattr(employee.user, field, update_data.pop(field))
@@ -370,7 +378,7 @@ async def update_client(
             employee.employment_status = status_val
 
     # Update CRM Client profile if exists
-    crm_fields = {'company_name', 'industry', 'address', 'city', 'state', 'country', 'tags'}
+    crm_fields = {'company_name', 'industry', 'address', 'city', 'state', 'country', 'website', 'postal_code', 'company_size', 'annual_revenue', 'tax_id', 'source', 'tags'}
     crm_data = {k: v for k, v in update_data.items() if k in crm_fields}
     if crm_data and employee.user:
         client_profile = db.query(Client).filter(

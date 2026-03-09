@@ -1,5 +1,5 @@
 # =========================================
-# Enterprise HRMS/CRM/PMS Backend
+# Ayatiworks Tech/CRM/PMS Backend
 # Multi-stage Docker build for production
 # =========================================
 

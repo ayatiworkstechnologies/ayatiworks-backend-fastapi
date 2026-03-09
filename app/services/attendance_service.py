@@ -179,7 +179,7 @@ class AttendanceService:
                     <p><span class="label">Late By:</span> <span class="value" style="color: #ef4444;">{late_time_str}</span></p>
                 </div>
 
-                <p>Best regards,<br>Enterprise HRMS</p>
+                <p>Best regards,<br>Ayatiworks Tech</p>
                 """
 
                 manager_html = get_base_template("Team Member Late Check-in", manager_content)

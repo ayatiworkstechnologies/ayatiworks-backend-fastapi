@@ -74,7 +74,7 @@ def send_welcome_email_async(self, user_id: int, temp_password: str = None):
 
             success = email_service.send_email(
                 to_email=user.email,
-                subject="Welcome to Enterprise HRMS",
+                subject="Welcome to Ayatiworks Tech",
                 html_content=html_content
             )
 

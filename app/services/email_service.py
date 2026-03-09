@@ -39,7 +39,7 @@ class EmailService:
 
         # Default template context
         self.default_context = {
-            'company_name': getattr(settings, 'COMPANY_NAME', 'Enterprise HRMS'),
+            'company_name': getattr(settings, 'COMPANY_NAME', 'Ayatiworks Tech'),
             'company_address': getattr(settings, 'COMPANY_ADDRESS', ''),
             'company_website': getattr(settings, 'COMPANY_WEBSITE', ''),
             'support_email': getattr(settings, 'SUPPORT_EMAIL', self.from_email),

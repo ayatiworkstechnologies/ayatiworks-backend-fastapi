@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    APP_NAME: str = "Enterprise HRMS"
+    APP_NAME: str = "Ayatiworks Tech"
     APP_VERSION: str = "1.1.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"  # development, staging, production
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = Field(default="", description="SMTP username")
     SMTP_PASSWORD: str = Field(default="", description="SMTP password")
     SMTP_FROM_EMAIL: str = Field(default="noreply@example.com", description="From email address")
-    SMTP_FROM_NAME: str = "Enterprise HRMS"
+    SMTP_FROM_NAME: str = "Ayatiworks Tech"
     SMTP_USE_TLS: bool = True
 
     @field_validator('SECRET_KEY')

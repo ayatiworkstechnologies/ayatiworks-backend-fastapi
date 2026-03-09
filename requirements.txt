@@ -3,7 +3,6 @@ fastapi==0.115.8
 uvicorn[standard]==0.34.0
 gunicorn==23.0.0
 python-multipart==0.0.18
-orjson==3.10.15
 
 # Database
 sqlalchemy==2.0.37
@@ -23,6 +22,7 @@ bcrypt==4.2.1
 # HTTP & Utils
 httpx==0.28.1
 python-dotenv==1.0.1
+orjson==3.10.15
 
 # Email
 aiosmtplib==3.0.2

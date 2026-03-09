@@ -1,7 +1,7 @@
 [project]
 name = "enterprise-hrms"
 version = "1.0.0"
-description = "Enterprise HRMS/CRM/PMS Backend"
+description = "Ayatiworks Tech/CRM/PMS Backend"
 requires-python = ">=3.11"
 
 [tool.ruff]

@@ -1,6 +1,6 @@
 """
 FastAPI Application Entry Point.
-Enterprise HRMS/CRM/PMS Backend.
+Ayatiworks Tech/CRM/PMS Backend.
 Optimized for fast request/response performance.
 """
 
@@ -97,7 +97,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
-    logger.info("🚀 Starting Enterprise HRMS Backend v%s", settings.APP_VERSION)
+    logger.info("🚀 Starting Ayatiworks Tech Backend v%s", settings.APP_VERSION)
     logger.info("📦 Environment: %s | Debug: %s", settings.ENVIRONMENT, settings.DEBUG)
 
     # Initialize database tables
@@ -119,7 +119,7 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="""
-    Enterprise HRMS/CRM/PMS Backend API
+    Ayatiworks Tech/CRM/PMS Backend API
 
     ## Features
     - 🔐 Authentication & Authorization

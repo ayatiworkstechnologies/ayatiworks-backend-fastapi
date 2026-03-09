@@ -21,6 +21,7 @@ class ClientCreate(BaseSchema):
     email: EmailStr
     password: str | None = None
     phone: str | None = None
+    avatar: str | None = None
 
     # Employee organization fields
     company_id: int | None = None
@@ -37,6 +38,13 @@ class ClientCreate(BaseSchema):
     city: str | None = None
     state: str | None = None
     country: str | None = None
+    website: str | None = None
+    postal_code: str | None = None
+    company_size: str | None = None
+    annual_revenue: float | None = None
+    tax_id: str | None = None
+    source: str | None = None
+    tags: list[str] | None = None
 
     @field_validator('company_id', 'department_id', 'designation_id', mode='before')
     @classmethod
@@ -54,6 +62,7 @@ class ClientUpdate(BaseSchema):
     last_name: str | None = None
     email: EmailStr | None = None
     phone: str | None = None
+    avatar: str | None = None
 
     # Employee fields
     department_id: int | None = None
@@ -68,6 +77,12 @@ class ClientUpdate(BaseSchema):
     city: str | None = None
     state: str | None = None
     country: str | None = None
+    website: str | None = None
+    postal_code: str | None = None
+    company_size: str | None = None
+    annual_revenue: float | None = None
+    tax_id: str | None = None
+    source: str | None = None
     tags: list[str] | None = None
 
     @field_validator('department_id', 'designation_id', 'manager_id', mode='before')

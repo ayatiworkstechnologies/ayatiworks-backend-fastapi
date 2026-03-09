@@ -1,4 +1,4 @@
-# Enterprise HRMS/CRM/PMS Backend
+# Ayatiworks Tech/CRM/PMS Backend
 
 A comprehensive enterprise backend system built with FastAPI and MySQL, covering HRMS, CRM, and Project Management.
 
@@ -64,7 +64,7 @@ The system creates the following roles by default:
 
 ## 📦 Production Deployment
 
- This guide outlines the steps to deploy the Enterprise HRMS/CRM/PMS application in a production environment.
+ This guide outlines the steps to deploy the Ayatiworks Tech/CRM/PMS application in a production environment.
 
 ### 1. Prerequisites
 
