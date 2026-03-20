@@ -109,3 +109,84 @@ async def delete_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
 
+
+# ============== General File Uploads ==============
+
+FILES_DIR = os.path.join(UPLOAD_BASE, "files")
+os.makedirs(FILES_DIR, exist_ok=True)
+
+ALLOWED_FILE_EXTENSIONS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".rtf",
+    ".ppt", ".pptx", ".zip", ".rar", ".7z",
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+    ".mp3", ".mp4", ".wav", ".avi", ".mov",
+}
+MAX_GENERAL_FILE_SIZE = 25 * 1024 * 1024  # 25MB
+
+
+@router.post("/files")
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload a general file (documents, images, videos, etc.).
+    Returns the URL to access the uploaded file.
+    Max size: 25MB.
+    """
+    ext = get_file_extension(file.filename or "")
+    if ext not in ALLOWED_FILE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{ext}' not allowed."
+        )
+
+    content = await file.read()
+
+    if len(content) > MAX_GENERAL_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {MAX_GENERAL_FILE_SIZE // (1024 * 1024)}MB"
+        )
+
+    unique_filename = generate_unique_filename(file.filename or "file")
+    file_path = os.path.join(FILES_DIR, unique_filename)
+
+    try:
+        with open(file_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+
+    base_url = str(request.base_url).rstrip("/")
+    file_url = f"{base_url}/uploads/files/{unique_filename}"
+
+    return {
+        "success": True,
+        "url": file_url,
+        "filename": unique_filename,
+        "original_filename": file.filename,
+        "size": len(content),
+        "content_type": file.content_type
+    }
+
+
+@router.delete("/files/{filename}")
+async def delete_file(
+    filename: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Delete an uploaded file."""
+    file_path = os.path.join(FILES_DIR, filename)
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        os.remove(file_path)
+        return {"success": True, "message": "File deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+
+

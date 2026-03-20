@@ -113,7 +113,7 @@ class ModuleFieldDef(BaseSchema):
     """A single field definition within a module."""
     name: str = Field(..., min_length=1, max_length=100)
     label: str = Field(..., min_length=1, max_length=255)
-    type: str = Field(..., pattern="^(text|number|email|date|textarea|select|checkbox)$")
+    type: str = Field(..., pattern="^(text|number|email|date|textarea|select|checkbox|file|image|phone|url|color|time|datetime|radio|password)$")
     required: bool = False
     options: list[str] | None = None  # For select type
     placeholder: str | None = None

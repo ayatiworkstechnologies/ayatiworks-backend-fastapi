@@ -362,9 +362,7 @@ def get_client_by_api_key(
     if not client:
         raise HTTPException(status_code=401, detail="Invalid API Key")
     return client
-import logging
 
-logger = logging.getLogger(__name__)
 
 @router.post("/{client_slug}/send-email", response_model=MessageResponse)
 async def public_send_email(
@@ -618,6 +616,12 @@ async def public_create_record(
 
                         body_tmpl = jinja_env.from_string(html_body)
                         html_body = body_tmpl.render(**record.data)
+
+                        # Append file/image attachments
+                        from app.api.v1.client_modules import _build_file_image_html
+                        attachments_html = _build_file_image_html(module.fields or [], record.data)
+                        if attachments_html:
+                            html_body += attachments_html
                     except Exception as e:
                         logger.error(f"Auto-email content rendering failed: {e}")
                         to_email = None # Skip sending if content fails

@@ -582,9 +582,6 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
             recipient_email = _render_jinja(recipient_email, record_data)
         except Exception:
             logger.warning(f"Failed to render recipient email template: {recipient_email}")
-            # Proceed with raw string (likely fail if invalid email) or None?
-            # If it was a template meant to be rendered and failed, using it raw is bad.
-            # But if it was just a static email, it's fine.
             pass
 
     if not recipient_email:
@@ -609,6 +606,11 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
     try:
         subject = _render_jinja(template.subject, record_data)
         html_body = _render_jinja(template.html_body, record_data)
+
+        # Auto-render file/image fields as HTML in email body
+        attachments_html = _build_file_image_html(module.fields or [], record_data)
+        if attachments_html:
+            html_body += attachments_html
         
         # Send non-blocking (fire and forget from client perspective, but we await here for reliability)
         await _send_email_logic(client_id, recipient_email, subject, html_body, db)
@@ -616,6 +618,48 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
     except Exception as e:
         logger.error(f"Failed to trigger module email: {e}")
         return False
+
+
+def _build_file_image_html(fields: list, record_data: dict) -> str:
+    """Build HTML section for file/image fields to append to email body."""
+    parts = []
+    
+    for field in fields:
+        field_type = field.get("type", "")
+        field_name = field.get("name", "")
+        field_label = field.get("label", field_name)
+        value = record_data.get(field_name)
+        
+        if not value or field_type not in ("file", "image"):
+            continue
+        
+        if field_type == "image":
+            parts.append(
+                f'<div style="margin:12px 0;">'
+                f'<p style="font-weight:600;color:#374151;margin:0 0 8px 0;">{field_label}:</p>'
+                f'<img src="{value}" alt="{field_label}" style="max-width:400px;border-radius:8px;border:1px solid #e5e7eb;" />'
+                f'</div>'
+            )
+        elif field_type == "file":
+            filename = value.split("/")[-1] if "/" in value else value
+            parts.append(
+                f'<div style="margin:12px 0;">'
+                f'<p style="font-weight:600;color:#374151;margin:0 0 8px 0;">{field_label}:</p>'
+                f'<a href="{value}" style="display:inline-block;padding:8px 16px;background:#3B82F6;color:#fff;'
+                f'border-radius:6px;text-decoration:none;font-size:14px;">'
+                f'📎 Download {filename}</a>'
+                f'</div>'
+            )
+    
+    if not parts:
+        return ""
+    
+    return (
+        '<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">'
+        '<h3 style="font-size:16px;color:#1f2937;margin:0 0 12px 0;">📎 Attachments</h3>'
+        + "".join(parts)
+        + '</div>'
+    )
 
 
 
