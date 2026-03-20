@@ -714,6 +714,7 @@ async def list_modules(
             icon=m.icon,
             field_count=len(m.fields) if m.fields else 0,
             record_count=record_counts.get(m.id, 0),
+            fields=m.fields or [],
         )
         for m in modules
     ]

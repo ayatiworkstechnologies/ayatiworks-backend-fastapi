@@ -162,6 +162,8 @@ class ClientModuleListResponse(BaseSchema):
     mail_template_id: int | None = None
     field_count: int = 0
     record_count: int = 0
+    fields: list[dict] = []
+
 
 
 # ============== Module Record Schemas ==============
