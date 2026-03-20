@@ -99,10 +99,7 @@ async def check_out(
     employee = emp_service.get_by_user_id(current_user.id)
 
     if not employee:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Employee profile not found"
-        )
+        raise ResourceNotFoundError("Employee profile", current_user.id)
 
     att_service = AttendanceService(db)
 
@@ -114,10 +111,7 @@ async def check_out(
             device_info=request.headers.get("user-agent")
         )
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise BusinessLogicError(str(e))
 
     return AttendanceResponse.model_validate(attendance)
 
@@ -340,4 +334,129 @@ async def approve_attendance(
         raise ResourceNotFoundError("Attendance", attendance_id)
 
     return AttendanceResponse.model_validate(attendance)
+
+
+@router.get("/export/{format}")
+async def export_attendance(
+    format: str,
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    company_id: int | None = None,
+    branch_id: int | None = None,
+    department_id: int | None = None,
+    current_user: User = Depends(PermissionChecker("attendance.view_all")),
+    db: Session = Depends(get_db)
+):
+    """
+    Export attendance to CSV, Excel, or PDF.
+    Requires attendance.view_all permission.
+    """
+    import csv
+    from io import BytesIO, StringIO
+
+    from fastapi.responses import StreamingResponse
+
+    if format not in ("csv", "excel", "pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Format must be csv, excel, or pdf"
+        )
+
+    att_service = AttendanceService(db)
+    attendances, _ = att_service.get_all_attendance(
+        from_date=from_date,
+        to_date=to_date,
+        company_id=company_id,
+        branch_id=branch_id,
+        department_id=department_id,
+        page=1,
+        page_size=10000
+    )
+
+    headers = ["Employee Code", "Employee Name", "Date", "Check In", "Check Out", "Work Mode", "Status", "Working Hours", "Late"]
+    rows = []
+    for att in attendances:
+        rows.append([
+            att.employee.employee_code if att.employee else "",
+            att.employee.user.full_name if att.employee and att.employee.user else "",
+            str(att.date),
+            str(att.check_in) if att.check_in else "",
+            str(att.check_out) if att.check_out else "",
+            att.work_mode or "",
+            att.status or "",
+            f"{att.working_hours:.2f}" if att.working_hours else "0.00",
+            "Yes" if att.is_late else "No",
+        ])
+
+    if format == "csv":
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows(rows)
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=attendance_{from_date}_{to_date}.csv"}
+        )
+
+    if format == "excel":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Attendance"
+
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+
+        for r, row in enumerate(rows, 2):
+            for c, val in enumerate(row, 1):
+                ws.cell(row=r, column=c, value=val)
+
+        for col in ws.columns:
+            max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 30)
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=attendance_{from_date}_{to_date}.xlsx"}
+        )
+
+    # PDF
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
+    table_data = [headers] + rows
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F2F2")]),
+    ]))
+    doc.build([table])
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=attendance_{from_date}_{to_date}.pdf"}
+    )
+
 

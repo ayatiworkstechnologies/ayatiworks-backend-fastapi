@@ -73,8 +73,8 @@ router.include_router(uploads.router)
 router.include_router(notifications.router)
 
 # ============== Reports & Dashboard ==============
-router.include_router(reports.router)
 router.include_router(dashboard.router)
+router.include_router(reports.router)
 
 # ============== Settings ==============
 router.include_router(settings.router)

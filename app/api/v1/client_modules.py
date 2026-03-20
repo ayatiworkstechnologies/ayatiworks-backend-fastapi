@@ -13,6 +13,8 @@ Optimised:
 """
 
 import asyncio
+import csv
+import io
 import logging
 import re
 import secrets
@@ -23,6 +25,7 @@ import aiosmtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from jinja2 import BaseLoader, Environment
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -896,6 +899,166 @@ async def list_module_records(
         [_build_record_response(r) for r in records],
         total, page, page_size,
     )
+
+
+@router.get("/clients/{client_id}/modules/{module_id}/records/export")
+async def export_module_records(
+    client_id: int,
+    module_id: int,
+    format: str = Query("csv", description="Export format: csv, excel, pdf"),
+    current_user: User = Depends(PermissionChecker("module.view")),
+    db: Session = Depends(get_db),
+):
+    """Export all records for a module as CSV, Excel, or PDF."""
+    _get_client_or_404(client_id, db)
+
+    module = db.query(ClientModule).filter(
+        ClientModule.id == module_id,
+        ClientModule.client_id == client_id,
+        ClientModule.is_deleted == False,
+    ).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    records = db.query(ClientModuleRecord).filter(
+        ClientModuleRecord.module_id == module_id,
+        ClientModuleRecord.is_deleted == False,
+    ).order_by(ClientModuleRecord.created_at.desc()).all()
+
+    fields = module.fields or []
+    field_names = [f["name"] for f in fields]
+    field_labels = [f.get("label", f["name"]) for f in fields]
+
+    # Build rows
+    rows = []
+    for r in records:
+        row = [str(r.data.get(fn, "")) if r.data else "" for fn in field_names]
+        row.append(r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "")
+        rows.append(row)
+    headers = field_labels + ["Created At"]
+
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', module.name)
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows(rows)
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}_records.csv"'},
+        )
+
+    elif format == "excel":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = module.name[:31]  # Excel sheet name max 31 chars
+
+        # Style header row
+        header_fill = PatternFill(start_color="4F46E5", end_color="4F46E5", fill_type="solid")
+        header_font = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
+        thin_border = Border(
+            left=Side(style="thin", color="E5E7EB"),
+            right=Side(style="thin", color="E5E7EB"),
+            top=Side(style="thin", color="E5E7EB"),
+            bottom=Side(style="thin", color="E5E7EB"),
+        )
+
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+
+        for row_idx, row_data in enumerate(rows, 2):
+            for col_idx, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical="center")
+
+        # Auto-width columns
+        for col in ws.columns:
+            max_length = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            ws.column_dimensions[col_letter].width = min(max_length + 4, 40)
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}_records.xlsx"'},
+        )
+
+    elif format == "pdf":
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+        output = io.BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=landscape(A4), topMargin=15*mm, bottomMargin=15*mm)
+        styles = getSampleStyleSheet()
+        elements = []
+
+        # Title
+        title_style = styles["Title"]
+        title_style.fontSize = 16
+        elements.append(Paragraph(f"{module.name} — Records", title_style))
+        elements.append(Spacer(1, 10*mm))
+
+        # Table data
+        table_data = [headers]
+        for row in rows:
+            # Wrap long text for PDF
+            table_data.append([
+                Paragraph(str(v)[:80], styles["Normal"]) if len(str(v)) > 30 else str(v)
+                for v in row
+            ])
+
+        num_cols = len(headers)
+        available_width = landscape(A4)[0] - 30*mm
+        col_width = available_width / num_cols
+
+        t = Table(table_data, colWidths=[col_width] * num_cols, repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F46E5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(t)
+
+        doc.build(elements)
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}_records.pdf"'},
+        )
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format. Use csv, excel, or pdf.")
 
 
 @router.post("/clients/{client_id}/modules/{module_id}/records", response_model=ClientModuleRecordResponse, status_code=status.HTTP_201_CREATED)

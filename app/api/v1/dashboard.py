@@ -17,11 +17,12 @@ from alembic import command
 from alembic.config import Config
 from app.models.attendance import Attendance
 from app.models.auth import User
-from app.models.client import Client
+from app.models.client import Client, Lead
 from app.models.company import Company
 from app.models.employee import Employee
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.leave import Leave, LeaveBalance
+from app.models.meta import MetaCampaign, MetaLead
 from app.models.organization import Department
 from app.models.project import Project, ProjectMember, Task, TaskStatus
 
@@ -46,7 +47,7 @@ def get_dashboard_stats(
     Returns different stats based on user's role.
     """
     # Get user's role
-    role_code = current_user.role.code if current_user.role else "EMPLOYEE"
+    role_code = current_user.role.code.upper() if current_user.role else "EMPLOYEE"
 
     # Base response
     stats = {
@@ -192,6 +193,8 @@ def _get_super_admin_stats(db: Session) -> dict[str, Any]:
     except Exception:
         system_health = "Degraded"
 
+
+
     return {
         "companies_count": total_companies,
         "users_count": total_users,
@@ -218,9 +221,10 @@ def _get_admin_stats(db: Session, user: User) -> dict[str, Any]:
         Department.company_id == company_id
     ).count()
 
-    # Pending approvals (leaves)
-    pending_leaves = db.query(Leave).filter(
-        Leave.company_id == company_id,
+
+    # Pending approvals (leaves) — join through Employee since Leave has no company_id
+    pending_leaves = db.query(Leave).join(Employee).filter(
+        Employee.company_id == company_id,
         Leave.status == "pending"
     ).count()
 
@@ -431,6 +435,11 @@ def _get_client_stats(db: Session, user: User) -> dict[str, Any]:
         Task.status.in_(["todo", "in_progress"])
     ).count()
 
+    # Meta Leads for this client
+    meta_leads_count = db.query(MetaLead).filter(
+        MetaLead.client_id == client.id
+    ).count()
+
     # Total spent (sum of paid invoices)
     total_spent = db.query(func.sum(Invoice.total)).filter(
         Invoice.client_id == client.id,
@@ -441,6 +450,7 @@ def _get_client_stats(db: Session, user: User) -> dict[str, Any]:
         "my_projects_count": my_projects,
         "open_invoices_count": open_invoices,
         "active_tasks_count": active_tasks,
+        "meta_leads_count": meta_leads_count,
         "total_spent": float(total_spent),
     }
 
@@ -548,10 +558,10 @@ def get_quick_actions(
 
     actions_map = {
         "SUPER_ADMIN": [
-            {"label": "Add Company", "href": "/companies/new", "icon": "HiOutlinePlus", "color": "blue"},
+            {"label": "Add Employee", "href": "/employees/new", "icon": "HiOutlinePlus", "color": "blue"},
+            {"label": "Add Company", "href": "/companies/new", "icon": "HiOutlineOfficeBuilding", "color": "emerald"},
             {"label": "Manage Roles", "href": "/roles", "icon": "HiOutlineShieldCheck", "color": "purple"},
             {"label": "View Users", "href": "/users", "icon": "HiOutlineUsers", "color": "green"},
-            {"label": "System Settings", "href": "/settings", "icon": "HiOutlineCog", "color": "gray"},
         ],
         "ADMIN": [
             {"label": "Add Employee", "href": "/employees/new", "icon": "HiOutlinePlus", "color": "blue"},

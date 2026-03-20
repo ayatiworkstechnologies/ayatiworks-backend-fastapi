@@ -232,7 +232,7 @@ async def list_leave_types(
 
     if company_id:
         query = query.filter(
-            (LeaveType.company_id == company_id) | (LeaveType.company_id is None)
+            (LeaveType.company_id == company_id) | (LeaveType.company_id.is_(None))
         )
 
     leave_types = query.all()

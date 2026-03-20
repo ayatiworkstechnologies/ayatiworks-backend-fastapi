@@ -362,21 +362,28 @@ async def verify_document(
     return EmployeeDocumentResponse.model_validate(document)
 
 
-@router.get("/export/csv")
-async def export_employees_csv(
+@router.get("/export/{format}")
+async def export_employees(
+    format: str,
     department_id: int | None = None,
     status: str | None = None,
     current_user: User = Depends(PermissionChecker("employee.view_all")),
     db: Session = Depends(get_db)
 ):
     """
-    Export employees to CSV format.
+    Export employees to CSV, Excel, or PDF.
     Requires employee.view_all permission.
     """
     import csv
-    from io import StringIO
+    from io import BytesIO, StringIO
 
     from fastapi.responses import StreamingResponse
+
+    if format not in ("csv", "excel", "pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Format must be csv, excel, or pdf"
+        )
 
     service = EmployeeService(db)
 
@@ -387,28 +394,15 @@ async def export_employees_csv(
         page_size=10000  # Max export limit
     )
 
-    # Create CSV in memory
-    output = StringIO()
-    writer = csv.writer(output)
+    headers = [
+        "Employee Code", "First Name", "Last Name", "Email",
+        "Department", "Designation", "Joining Date",
+        "Employment Type", "Employment Status", "Work Mode", "Phone"
+    ]
 
-    # Header row
-    writer.writerow([
-        "Employee Code",
-        "First Name",
-        "Last Name",
-        "Email",
-        "Department",
-        "Designation",
-        "Joining Date",
-        "Employment Type",
-        "Employment Status",
-        "Work Mode",
-        "Phone"
-    ])
-
-    # Data rows
+    rows = []
     for emp in employees:
-        writer.writerow([
+        rows.append([
             emp.employee_code,
             emp.user.first_name if emp.user else "",
             emp.user.last_name if emp.user else "",
@@ -422,13 +416,75 @@ async def export_employees_csv(
             emp.personal_phone or ""
         ])
 
-    # Reset stream position
-    output.seek(0)
+    if format == "csv":
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows(rows)
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=employees.csv"}
+        )
 
+    if format == "excel":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Employees"
+
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+
+        for r, row in enumerate(rows, 2):
+            for c, val in enumerate(row, 1):
+                ws.cell(row=r, column=c, value=val)
+
+        for col in ws.columns:
+            max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 30)
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=employees.xlsx"}
+        )
+
+    # PDF
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
+    table_data = [headers] + rows
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F2F2")]),
+    ]))
+    doc.build([table])
+    buf.seek(0)
     return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=employees.csv"}
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=employees.pdf"}
     )
 
 

@@ -50,7 +50,9 @@ def generate_invoice_number(db: Session) -> str:
 @router.get("", response_model=PaginatedResponse[InvoiceListResponse])
 async def list_invoices(
     client_id: int | None = None,
+    company_id: int | None = None,
     status: str | None = None,
+    search: str | None = None,
     from_date: date | None = None,
     to_date: date | None = None,
     page: int = Query(1, ge=1),
@@ -58,8 +60,13 @@ async def list_invoices(
     current_user: User = Depends(PermissionChecker("invoice.view")),
     db: Session = Depends(get_db)
 ):
-    """List all invoices."""
+    """List all invoices with filters, search, and pagination."""
+    from app.models.client import Client
+
     query = db.query(Invoice).filter(Invoice.is_deleted == False)
+
+    if company_id:
+        query = query.filter(Invoice.company_id == company_id)
 
     if client_id:
         query = query.filter(Invoice.client_id == client_id)
@@ -72,6 +79,13 @@ async def list_invoices(
 
     if to_date:
         query = query.filter(Invoice.issue_date <= to_date)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.outerjoin(Client, Invoice.client_id == Client.id).filter(
+            Invoice.invoice_number.ilike(search_term)
+            | Client.name.ilike(search_term)
+        )
 
     total = query.count()
 
@@ -324,4 +338,127 @@ async def get_invoice_payments(
     ).order_by(Payment.payment_date).all()
 
     return [PaymentResponse.model_validate(p) for p in payments]
+
+
+@router.get("/export/{format}")
+async def export_invoices(
+    format: str,
+    client_id: int | None = None,
+    status: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    current_user: User = Depends(PermissionChecker("invoice.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Export invoices to CSV, Excel, or PDF.
+    Requires invoice.view permission.
+    """
+    import csv
+    import io
+
+    from fastapi.responses import StreamingResponse
+
+    if format not in ("csv", "excel", "pdf"):
+        raise HTTPException(status_code=400, detail="Format must be csv, excel, or pdf")
+
+    query = db.query(Invoice).filter(Invoice.is_deleted == False)
+    if client_id:
+        query = query.filter(Invoice.client_id == client_id)
+    if status:
+        query = query.filter(Invoice.status == status)
+    if from_date:
+        query = query.filter(Invoice.issue_date >= from_date)
+    if to_date:
+        query = query.filter(Invoice.issue_date <= to_date)
+
+    invoices = query.order_by(Invoice.issue_date.desc()).limit(10000).all()
+
+    headers = ["Invoice #", "Client", "Issue Date", "Due Date", "Subtotal", "Tax", "Total", "Amount Due", "Status"]
+    rows = []
+    for inv in invoices:
+        rows.append([
+            inv.invoice_number,
+            inv.client.name if inv.client else "",
+            str(inv.issue_date) if inv.issue_date else "",
+            str(inv.due_date) if inv.due_date else "",
+            f"{inv.subtotal:.2f}" if inv.subtotal else "0.00",
+            f"{inv.tax:.2f}" if inv.tax else "0.00",
+            f"{inv.total:.2f}" if inv.total else "0.00",
+            f"{inv.amount_due:.2f}" if inv.amount_due else "0.00",
+            inv.status or "",
+        ])
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows(rows)
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=invoices.csv"}
+        )
+
+    if format == "excel":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Invoices"
+
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+
+        for r, row in enumerate(rows, 2):
+            for c, val in enumerate(row, 1):
+                ws.cell(row=r, column=c, value=val)
+
+        for col in ws.columns:
+            max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 30)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=invoices.xlsx"}
+        )
+
+    # PDF
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4))
+    table_data = [headers] + rows
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F2F2")]),
+        ("ALIGN", (4, 1), (-2, -1), "RIGHT"),
+    ]))
+    doc.build([table])
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=invoices.pdf"}
+    )
+
 
