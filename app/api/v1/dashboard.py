@@ -811,7 +811,12 @@ def run_db_migration(
     Run database migrations programmatically.
     Use this to fix 500 errors on live server if shell access is unavailable.
     """
-    if current_user.role.code != "SUPER_ADMIN":
+    from app.config import settings
+
+    if not settings.ENABLE_API_MIGRATIONS:
+        return {"status": "error", "message": "Migration endpoint is disabled."}
+
+    if not current_user.role or current_user.role.code != "SUPER_ADMIN":
         return {"status": "error", "message": "Unauthorized"}
 
     try:

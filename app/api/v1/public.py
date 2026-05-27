@@ -15,7 +15,9 @@ from app.config import settings
 from app.core.exceptions import ResourceNotFoundError, ValidationError
 from app.database import get_db
 from app.models.auth import User
+from app.models.ai_bot import AIBot, BotConversation, BotMessage
 from app.models.public import CareerApplication, ContactEnquiry
+from app.schemas.ai_bot import BotChatResponse, BotConversationResponse, BotMessageCreate, BotMessageResponse, PublicBotResponse
 from app.schemas.public import (
     CareerListResponse,
     CareerResponse,
@@ -26,8 +28,126 @@ from app.schemas.public import (
     ContactUpdate,
 )
 from app.services.email_service import email_service
+from app.services.bot_ai_service import BotAIService
 
 router = APIRouter(prefix="/public", tags=["Public"])
+
+
+@router.get("/bots/{bot_slug}", response_model=PublicBotResponse)
+async def get_public_bot(
+    bot_slug: str,
+    db: Session = Depends(get_db)
+):
+    """Get a published public bot by slug."""
+    bot = db.query(AIBot).filter(
+        AIBot.slug == bot_slug,
+        AIBot.is_deleted == False,
+        AIBot.is_active == True,
+        AIBot.is_published == True,
+    ).first()
+    if not bot:
+        raise ResourceNotFoundError("Bot", bot_slug)
+    return PublicBotResponse.model_validate(bot)
+
+
+@router.post("/bots/{bot_slug}/conversations", response_model=BotConversationResponse, status_code=status.HTTP_201_CREATED)
+async def create_public_bot_conversation(
+    bot_slug: str,
+    data: dict = Body(default={}),
+    db: Session = Depends(get_db)
+):
+    """Create a public conversation for a published bot."""
+    bot = db.query(AIBot).filter(
+        AIBot.slug == bot_slug,
+        AIBot.is_deleted == False,
+        AIBot.is_active == True,
+        AIBot.is_published == True,
+    ).first()
+    if not bot:
+        raise ResourceNotFoundError("Bot", bot_slug)
+
+    conversation = BotConversation(
+        bot_id=bot.id,
+        visitor_name=data.get("visitor_name"),
+        visitor_email=data.get("visitor_email"),
+        channel="public_web",
+        language=data.get("language", "en"),
+        mood=data.get("mood"),
+        last_message_at=datetime.utcnow(),
+    )
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
+    response = BotConversationResponse.model_validate(conversation)
+    response.message_count = 0
+    return response
+
+
+@router.post("/bots/{bot_slug}/conversations/{conversation_id}/messages", response_model=BotChatResponse)
+async def send_public_bot_message(
+    bot_slug: str,
+    conversation_id: int,
+    payload: BotMessageCreate,
+    db: Session = Depends(get_db)
+):
+    """Send a public chat message to a published bot."""
+    bot = db.query(AIBot).filter(
+        AIBot.slug == bot_slug,
+        AIBot.is_deleted == False,
+        AIBot.is_active == True,
+        AIBot.is_published == True,
+    ).first()
+    if not bot:
+        raise ResourceNotFoundError("Bot", bot_slug)
+
+    conversation = db.query(BotConversation).filter(
+        BotConversation.id == conversation_id,
+        BotConversation.bot_id == bot.id,
+        BotConversation.is_deleted == False,
+    ).first()
+    if not conversation:
+        raise ResourceNotFoundError("Conversation", conversation_id)
+
+    user_message = BotMessage(
+        conversation_id=conversation_id,
+        role="user",
+        content=payload.content,
+        detected_mood=payload.detected_mood,
+        message_metadata=payload.message_metadata,
+    )
+    db.add(user_message)
+    db.flush()
+
+    service = BotAIService(db)
+    assistant_content, assistant_metadata = await service.generate_response(
+        bot, conversation, payload.content, payload.detected_mood
+    )
+
+    assistant_message = BotMessage(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=assistant_content,
+        detected_mood=payload.detected_mood,
+        message_metadata={
+            "bot_slug": bot.slug,
+            "public": True,
+            **assistant_metadata,
+        },
+    )
+    db.add(assistant_message)
+
+    conversation.last_message_at = datetime.utcnow()
+    conversation.mood = payload.detected_mood or conversation.mood
+    db.add(conversation)
+    db.commit()
+    db.refresh(user_message)
+    db.refresh(assistant_message)
+
+    return BotChatResponse(
+        user_message=BotMessageResponse.model_validate(user_message),
+        assistant_message=BotMessageResponse.model_validate(assistant_message),
+    )
 
 
 @router.post("/contact", response_model=ContactResponse, status_code=status.HTTP_201_CREATED)

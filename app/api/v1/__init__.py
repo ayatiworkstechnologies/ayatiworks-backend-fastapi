@@ -7,6 +7,7 @@ from .invoices import router as invoices_router
 from .leaves import router as leaves_router
 from .notifications import router as notifications_router
 from .organizations import router as organizations_router
+from .bots import router as bots_router
 from .permissions import router as permissions_router
 from .projects import router as projects_router
 from .public import router as public_router
@@ -29,6 +30,7 @@ router.include_router(shifts_router, prefix="/shifts", tags=["Shifts"])
 router.include_router(reports_router, prefix="/reports", tags=["Reports"])
 router.include_router(notifications_router, prefix="/notifications", tags=["Notifications"])
 router.include_router(settings_router, prefix="/settings", tags=["Settings"])
+router.include_router(bots_router, prefix="/bots", tags=["Bots"])
 router.include_router(roles_router, prefix="/roles", tags=["Roles"])
 router.include_router(permissions_router, prefix="/permissions", tags=["Permissions"])
 router.include_router(user_management_router, tags=["User Management"])

@@ -101,7 +101,9 @@ async def lifespan(app: FastAPI):
     logger.info("📦 Environment: %s | Debug: %s", settings.ENVIRONMENT, settings.DEBUG)
 
     # Initialize database tables
-    init_db()
+    auto_created = init_db()
+    if not auto_created:
+        logger.info("Database auto-creation skipped; expecting Alembic-managed schema.")
     logger.info("✅ Database initialized (pool_size=%d, max_overflow=%d)",
                 settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW)
 
@@ -161,7 +163,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     # allow_origins=settings.CORS_ORIGINS,  # Replaced by regex for broader support
-    allow_origin_regex="https?://.*",       # Allow all http/https origins
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -4,7 +4,7 @@ Role schemas for API requests and responses.
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.permission import PermissionResponse
 
@@ -39,8 +39,7 @@ class RoleResponse(RoleBase):
     created_at: datetime
     updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleWithPermissions(RoleResponse):
@@ -48,8 +47,7 @@ class RoleWithPermissions(RoleResponse):
     permissions: list[PermissionResponse] = []
     permission_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RolePermissionUpdate(BaseModel):

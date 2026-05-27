@@ -79,6 +79,8 @@ ipython_config.py
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
@@ -100,6 +102,7 @@ Thumbs.db
 uploads/
 *.sqlite3
 *.db
+*.db-journal
 
 # Temp output files
 test_output.txt

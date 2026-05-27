@@ -6,6 +6,7 @@ Uses the employees table instead of a separate clients table.
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError as SQLAlchemyIntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import PermissionChecker
@@ -230,79 +231,87 @@ async def create_client(
             detail="A user with this email already exists."
         )
 
-    # Create User with CLIENT role
     password = data.password or generate_random_password()
-    user = User(
-        email=data.email,
-        password_hash=hash_password(password),
-        first_name=data.first_name,
-        last_name=data.last_name,
-        phone=data.phone,
-        avatar=data.avatar,
-        role_id=client_role.id,
-        company_id=data.company_id if data.company_id else None,
-        is_active=True,
-        is_verified=True,
-        created_by=current_user.id,
-    )
-    db.add(user)
-    db.flush()
-
-    # Generate employee code with AWC prefix for clients
     service = EmployeeService(db)
-    employee_code = service.generate_employee_code(prefix="AWC")
 
-    # Create Employee record
-    employee = Employee(
-        user_id=user.id,
-        employee_code=employee_code,
-        company_id=data.company_id if data.company_id else None,
-        department_id=data.department_id if data.department_id else None,
-        designation_id=data.designation_id if data.designation_id else None,
-        joining_date=data.joining_date,
-        employment_type=data.employment_type or "contract",
-        employment_status="active",
-        work_mode=data.work_mode or "remote",
-        created_by=current_user.id,
-    )
-    db.add(employee)
-    db.flush()
+    for attempt in range(5):
+        try:
+            # Create User with CLIENT role
+            user = User(
+                email=data.email,
+                password_hash=hash_password(password),
+                first_name=data.first_name,
+                last_name=data.last_name,
+                phone=data.phone,
+                avatar=data.avatar,
+                role_id=client_role.id,
+                company_id=data.company_id if data.company_id else None,
+                is_active=True,
+                is_verified=True,
+                created_by=current_user.id,
+            )
+            db.add(user)
+            db.flush()
 
-    # Always create CRM Client profile for modules/mail
-    import re
-    client_name = data.company_name or f"{data.first_name} {data.last_name or ''}".strip()
-    client_slug = client_name.lower().strip()
-    client_slug = re.sub(r'[^\w\s-]', '', client_slug)
-    client_slug = re.sub(r'[\s_]+', '-', client_slug)
+            # Generate employee code with AWC prefix for clients
+            employee_code = service.generate_employee_code(prefix="AWC")
 
-    client_profile = Client(
-        name=client_name,
-        slug=client_slug,
-        email=data.email,
-        phone=data.phone,
-        company_name=data.company_name,
-        company_id=data.company_id if data.company_id else None,
-        industry=data.industry,
-        address=data.address,
-        city=data.city,
-        state=data.state,
-        country=data.country,
-        website=data.website,
-        postal_code=data.postal_code,
-        company_size=data.company_size,
-        annual_revenue=data.annual_revenue,
-        tax_id=data.tax_id,
-        source=data.source,
-        tags=data.tags,
-        status="active",
-        user_id=user.id,
-        manager_id=employee.id,
-        created_by=current_user.id,
-    )
-    db.add(client_profile)
+            # Create Employee record
+            employee = Employee(
+                user_id=user.id,
+                employee_code=employee_code,
+                company_id=data.company_id if data.company_id else None,
+                department_id=data.department_id if data.department_id else None,
+                designation_id=data.designation_id if data.designation_id else None,
+                joining_date=data.joining_date,
+                employment_type=data.employment_type or "contract",
+                employment_status="active",
+                work_mode=data.work_mode or "remote",
+                created_by=current_user.id,
+            )
+            db.add(employee)
+            db.flush()
 
-    db.commit()
-    db.refresh(employee)
+            # Always create CRM Client profile for modules/mail
+            import re
+            client_name = data.company_name or f"{data.first_name} {data.last_name or ''}".strip()
+            client_slug = client_name.lower().strip()
+            client_slug = re.sub(r'[^\w\s-]', '', client_slug)
+            client_slug = re.sub(r'[\s_]+', '-', client_slug)
+
+            client_profile = Client(
+                name=client_name,
+                slug=client_slug,
+                email=data.email,
+                phone=data.phone,
+                company_name=data.company_name,
+                company_id=data.company_id if data.company_id else None,
+                industry=data.industry,
+                address=data.address,
+                city=data.city,
+                state=data.state,
+                country=data.country,
+                website=data.website,
+                postal_code=data.postal_code,
+                company_size=data.company_size,
+                annual_revenue=data.annual_revenue,
+                tax_id=data.tax_id,
+                source=data.source,
+                tags=data.tags,
+                status="active",
+                user_id=user.id,
+                manager_id=employee.id,
+                created_by=current_user.id,
+            )
+            db.add(client_profile)
+
+            db.commit()
+            db.refresh(employee)
+            break
+        except SQLAlchemyIntegrityError as exc:
+            db.rollback()
+            if "employee_code" not in str(exc).lower() or attempt == 4:
+                raise
 
     # Send welcome email
     try:
@@ -318,11 +327,22 @@ async def create_client(
             joining_date=str(employee.joining_date),
             password=password,
         )
-        email_service.send_email(
-            to_email=user.email,
-            subject=subject,
-            html_content=html_content,
-        )
+        from app.config import settings
+
+        if settings.REDIS_URL:
+            from app.tasks.email_tasks import send_email_async
+
+            send_email_async.delay(
+                to_email=user.email,
+                subject=subject,
+                html_content=html_content,
+            )
+        else:
+            email_service.send_email(
+                to_email=user.email,
+                subject=subject,
+                html_content=html_content,
+            )
     except Exception as e:
         import logging
         logging.error(f"Failed to send client welcome email: {e}")
@@ -393,6 +413,8 @@ async def update_client(
         if client_profile:
             for field, value in crm_data.items():
                 setattr(client_profile, field, value)
+            if employee.employment_status in ("active", "inactive"):
+                client_profile.status = employee.employment_status
 
     employee.updated_by = current_user.id
     db.commit()

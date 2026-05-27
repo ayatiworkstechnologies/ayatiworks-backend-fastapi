@@ -16,7 +16,7 @@ from app.config import settings
 from app.database import Base
 
 # Import all models to register with Base
-from app.models import auth, settings as settings_model, company, organization
+from app.models import ai_bot, auth, settings as settings_model, company, organization
 from app.models import employee, attendance, leave
 
 # this is the Alembic Config object

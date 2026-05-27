@@ -49,8 +49,14 @@ def get_db():
         db.close()
 
 
-def init_db():
-    """Initialize database tables."""
+def init_db() -> bool:
+    """Initialize database tables when explicitly enabled."""
     # Import all models here to ensure they're registered with Base
     import app.models  # noqa: F401
+
+    if not settings.AUTO_CREATE_TABLES:
+        logger.info("Automatic schema creation is disabled; use Alembic migrations instead.")
+        return False
+
     Base.metadata.create_all(bind=engine)
+    return True

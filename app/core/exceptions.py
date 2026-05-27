@@ -33,10 +33,15 @@ class AppException(Exception):
 class AuthenticationError(AppException):
     """Raised when authentication fails."""
 
-    def __init__(self, message: str = "Authentication failed", **kwargs):
+    def __init__(
+        self,
+        message: str = "Authentication failed",
+        status_code: int = status.HTTP_401_UNAUTHORIZED,
+        **kwargs,
+    ):
         super().__init__(
             message=message,
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status_code,
             **kwargs
         )
 

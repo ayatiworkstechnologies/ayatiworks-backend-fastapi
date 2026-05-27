@@ -3,7 +3,10 @@ Test fixtures and configuration.
 """
 
 import pytest
+import tempfile
+from pathlib import Path
 from typing import Generator
+from uuid import uuid4
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
@@ -12,10 +15,13 @@ from app.main import app
 from app.database import Base, get_db
 from app.models.auth import User, Role
 from app.core.security import hash_password
+from app.services.auth_service import AuthService
 
 
 # Test database URL (SQLite for speed)
-TEST_DATABASE_URL = "sqlite:///./test.db"
+# Use the OS temp directory to avoid filesystem I/O issues in certain workspaces.
+TEST_DB_PATH = Path(tempfile.gettempdir()) / f"ayatiworks_tech_test_{uuid4().hex}.db"
+TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 
 engine = create_engine(
     TEST_DATABASE_URL, 
@@ -39,6 +45,12 @@ def setup_database():
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+    try:
+        if TEST_DB_PATH.exists():
+            TEST_DB_PATH.unlink()
+    except PermissionError:
+        pass
 
 
 @pytest.fixture
@@ -56,6 +68,9 @@ def db() -> Generator:
 def client(db) -> TestClient:
     """Get test client with database override."""
     app.dependency_overrides[get_db] = lambda: db
+    storage = getattr(app.state.limiter, "_storage", None)
+    if storage and hasattr(storage, "reset"):
+        storage.reset()
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
@@ -64,9 +79,10 @@ def client(db) -> TestClient:
 @pytest.fixture
 def test_role(db) -> Role:
     """Create test role."""
+    suffix = uuid4().hex[:8]
     role = Role(
         name="Test Role",
-        code="test_role",
+        code=f"test_role_{suffix}",
         description="Test role for unit tests",
         is_active=True
     )
@@ -79,8 +95,9 @@ def test_role(db) -> Role:
 @pytest.fixture
 def test_user(db, test_role) -> User:
     """Create test user."""
+    suffix = uuid4().hex[:8]
     user = User(
-        email="test@example.com",
+        email=f"test_{suffix}@example.com",
         password_hash=hash_password("TestPassword123!"),
         first_name="Test",
         last_name="User",
@@ -95,18 +112,15 @@ def test_user(db, test_role) -> User:
 
 
 @pytest.fixture
-def auth_headers(test_user, client) -> dict:
+def auth_headers(test_user, db) -> dict:
     """Get authentication headers for test user."""
-    response = client.post(
-        "/api/v1/auth/login",
-        json={
-            "email": "test@example.com",
-            "password": "TestPassword123!"
-        }
+    auth_service = AuthService(db)
+    access_token, refresh_token, _ = auth_service.create_tokens(test_user)
+    auth_service.create_session(
+        user=test_user,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        ip_address="testclient",
+        user_agent="pytest",
     )
-    
-    if response.status_code == 200:
-        token = response.json()["access_token"]
-        return {"Authorization": f"Bearer {token}"}
-    
-    return {}
+    return {"Authorization": f"Bearer {access_token}"}

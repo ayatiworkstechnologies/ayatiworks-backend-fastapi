@@ -12,13 +12,14 @@ REDIS_URL = getattr(settings, 'REDIS_URL', 'redis://localhost:6379/0')
 
 # Create Celery app
 celery_app = Celery(
-    'enterprise_hrms',
+    'ayatiworks_tech',
     broker=REDIS_URL,
     backend=REDIS_URL,
     include=[
         'app.tasks.email_tasks',
         'app.tasks.report_tasks',
         'app.tasks.notification_tasks',
+        'app.tasks.cleanup_tasks',
     ]
 )
 
@@ -54,6 +55,7 @@ celery_app.conf.update(
         'app.tasks.email_tasks.*': {'queue': 'email'},
         'app.tasks.report_tasks.*': {'queue': 'reports'},
         'app.tasks.notification_tasks.*': {'queue': 'notifications'},
+        'app.tasks.cleanup_tasks.*': {'queue': 'maintenance'},
     },
 
     # Beat schedule (periodic tasks)

@@ -4,6 +4,8 @@ Common dependencies for route handlers.
 """
 
 
+from datetime import datetime
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session, joinedload
@@ -12,7 +14,7 @@ from app.core.feature_control import is_feature_enabled
 from app.core.permissions import check_permission
 from app.core.security import decode_token
 from app.database import get_db
-from app.models.auth import RolePermission, User
+from app.models.auth import RolePermission, User, UserSession
 
 # Bearer token scheme
 security = HTTPBearer(auto_error=False)
@@ -36,7 +38,7 @@ async def get_current_user(
     token = credentials.credentials
     payload = decode_token(token)
 
-    if not payload:
+    if not payload or payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -50,6 +52,18 @@ async def get_current_user(
             detail="Invalid token payload"
         )
 
+    session = db.query(UserSession).filter(
+        UserSession.access_token == token,
+        UserSession.is_valid == True,
+        UserSession.expires_at > datetime.utcnow()
+    ).first()
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or invalidated",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
     user = db.query(User).options(
         joinedload(User.role)
     ).filter(
@@ -61,6 +75,13 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
+        )
+
+    if session.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session",
+            headers={"WWW-Authenticate": "Bearer"}
         )
 
     return user
@@ -96,19 +117,31 @@ async def get_optional_user(
     token = credentials.credentials
     payload = decode_token(token)
 
-    if not payload:
+    if not payload or payload.get("type") != "access":
         return None
 
     user_id = payload.get("sub")
     if not user_id:
         return None
 
-    return db.query(User).options(
+    session = db.query(UserSession).filter(
+        UserSession.access_token == token,
+        UserSession.is_valid == True,
+        UserSession.expires_at > datetime.utcnow()
+    ).first()
+    if not session:
+        return None
+
+    user = db.query(User).options(
         joinedload(User.role)
     ).filter(
         User.id == int(user_id),
         User.is_deleted == False
     ).first()
+    if not user or session.user_id != user.id:
+        return None
+
+    return user
 
 
 def get_user_permissions(user: User, db: Session) -> list[str]:

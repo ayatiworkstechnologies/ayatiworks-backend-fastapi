@@ -9,6 +9,7 @@ from app.api.v1 import (
     attendance,
     auth,
     blogs,
+    bots,
     client_modules,
     clients,
     companies,
@@ -71,6 +72,7 @@ router.include_router(uploads.router)
 
 # ============== Communication ==============
 router.include_router(notifications.router)
+router.include_router(bots.router)
 
 # ============== Reports & Dashboard ==============
 router.include_router(dashboard.router)

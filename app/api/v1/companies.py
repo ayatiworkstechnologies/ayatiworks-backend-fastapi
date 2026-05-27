@@ -58,20 +58,15 @@ async def get_company(
     db: Session = Depends(get_db)
 ):
     """Get company by ID."""
-    print(f"DEBUG: Entering get_company id={company_id}")
     service = CompanyService(db)
     company = service.get_by_id(company_id)
-    print(f"DEBUG: Company found: {company}")
 
     if not company:
         raise ResourceNotFoundError("Company", company_id)
 
-    print("DEBUG: Validating model")
     response = CompanyResponse.model_validate(company)
-    print("DEBUG: Getting counts")
     response.branch_count = service.get_branch_count(company_id)
     response.employee_count = service.get_employee_count(company_id)
-    print("DEBUG: Returning response")
 
     return response
 

@@ -14,6 +14,7 @@ from app.core.exceptions import (
     InvalidCredentialsError,
     PermissionDeniedError,
     ResourceNotFoundError,
+    ServiceUnavailableError,
     TokenExpiredError,
 )
 from app.database import get_db
@@ -25,8 +26,11 @@ from app.schemas.auth import (
     LoginResponse,
     OTPRequest,
     RefreshTokenRequest,
+    ResetPasswordRequest,
     RoleListResponse,
+    SetPasswordRequest,
     Token,
+    UserCreate,
     UserResponse,
 )
 from app.services.auth_service import AuthService
@@ -35,6 +39,112 @@ from app.services.auth_service import AuthService
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(
+    data: UserCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Public self-registration.
+
+    The account is created without role assignments and remains unverified until
+    an administrator completes onboarding.
+    """
+    existing = db.query(User).filter(User.email == data.email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+
+    auth_service = AuthService(db)
+    user = auth_service.register_user(data)
+    user.is_active = True
+    user.is_verified = False
+    db.commit()
+    db.refresh(user)
+
+    return UserResponse.model_validate(user)
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    request: Request,
+    data: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """Send a password reset code/link when the account exists."""
+    user = db.query(User).filter(
+        User.email == data.email,
+        User.is_deleted == False,
+    ).first()
+
+    if user and user.is_active:
+        auth_service = AuthService(db)
+        reset_code = auth_service.generate_and_save_otp(user, purpose="reset_password")
+
+        origin = request.headers.get("origin") or "http://localhost:3000"
+        reset_url = f"{origin.rstrip('/')}/reset-password?token={reset_code}"
+
+        try:
+            from app.services.email_service import email_service
+
+            email_service.send_password_reset_email(
+                to_email=user.email,
+                user_name=user.full_name,
+                reset_code=reset_code,
+                reset_url=reset_url,
+            )
+        except Exception:
+            # Keep response generic; logs from the email service capture details.
+            pass
+
+    return {"message": "If the email exists, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    data: SetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """Reset password using the code sent by forgot-password."""
+    auth_service = AuthService(db)
+
+    from app.models.auth import OTPCode
+
+    reset_record = db.query(OTPCode).filter(
+        OTPCode.code == data.token,
+        OTPCode.purpose == "reset_password",
+        OTPCode.is_used == False,
+    ).first()
+
+    if not reset_record or not reset_record.is_valid():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    user = db.query(User).filter(
+        User.id == reset_record.user_id,
+        User.is_deleted == False,
+    ).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    if not auth_service.verify_otp(user.id, data.token, purpose="reset_password"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    auth_service.change_password(user, data.new_password)
+
+    return {"message": "Password reset successfully"}
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -61,8 +171,20 @@ async def login(
     # Check if 2FA is enabled
     if user.is_2fa_enabled:
         # Generate and send OTP
-        _otp = auth_service.generate_and_save_otp(user, purpose="login")
-        # TODO: Send OTP via email
+        otp = auth_service.generate_and_save_otp(user, purpose="login")
+        from app.services.email_service import email_service
+
+        sent = email_service.send_otp_email(
+            to_email=user.email,
+            user_name=user.full_name,
+            otp_code=otp,
+            ip_address=request.client.host if request.client else None,
+            device_info=request.headers.get("user-agent"),
+            expiry_minutes=auth_service.get_otp_expiry_minutes(),
+        )
+        if not sent:
+            raise ServiceUnavailableError("email")
+
         raise AuthenticationError(
             message="2FA required. OTP sent to email.",
             status_code=status.HTTP_202_ACCEPTED,

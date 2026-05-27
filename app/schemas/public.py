@@ -4,7 +4,7 @@ Public facing schemas for Contact and Careers.
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 from app.schemas.common import PaginatedResponse
 
@@ -38,8 +38,7 @@ class ContactResponse(BaseModel):
     created_at: datetime
     updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ContactListResponse(PaginatedResponse[ContactResponse]):
     """Paginated list of contact enquiries."""
@@ -89,8 +88,7 @@ class CareerResponse(BaseModel):
     created_at: datetime
     updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CareerListResponse(PaginatedResponse[CareerResponse]):
     """Paginated list of career applications."""

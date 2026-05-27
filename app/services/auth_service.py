@@ -221,6 +221,10 @@ class AuthService:
 
         return otp
 
+    def get_otp_expiry_minutes(self) -> int:
+        """Return OTP expiry duration in minutes."""
+        return settings.OTP_EXPIRY_MINUTES
+
     def verify_otp(self, user_id: int, code: str, purpose: str = "login") -> bool:
         """Verify OTP code."""
         otp_record = self.db.query(OTPCode).filter(

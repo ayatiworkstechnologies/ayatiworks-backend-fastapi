@@ -82,7 +82,11 @@ class Branch(BaseModel, AuditMixin):
     geo_fence_radius = Column(Integer, default=100)  # meters for geo-fencing
 
     # Manager
-    manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    manager_id = Column(
+        Integer,
+        ForeignKey("users.id", name="fk_branches_manager_id_users", use_alter=True),
+        nullable=True,
+    )
 
     # Settings
     settings = Column(JSON, nullable=True)

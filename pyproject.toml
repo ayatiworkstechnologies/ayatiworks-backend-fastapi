@@ -1,5 +1,5 @@
 [project]
-name = "enterprise-hrms"
+name = "ayatiworks-tech"
 version = "1.0.0"
 description = "Ayatiworks Tech/CRM/PMS Backend"
 requires-python = ">=3.11"
@@ -20,6 +20,7 @@ exclude = [
     ".pytest_cache",
 ]
 
+[tool.ruff.lint]
 # Select linting rules
 select = [
     "E",     # pycodestyle errors
@@ -69,6 +70,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 source = ["app"]

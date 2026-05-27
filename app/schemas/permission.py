@@ -4,7 +4,7 @@ Permission schemas for API requests and responses.
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PermissionBase(BaseModel):
@@ -34,8 +34,7 @@ class PermissionResponse(PermissionBase):
     created_at: datetime
     updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PermissionListResponse(BaseModel):
@@ -52,7 +51,7 @@ class PermissionGroupedResponse(BaseModel):
 
 class RolePermissionAssign(BaseModel):
     """Schema for assigning/removing permissions to/from a role."""
-    permission_ids: list[int] = Field(..., min_items=1)
+    permission_ids: list[int] = Field(..., min_length=1)
 
 
 class UserPermissionCheck(BaseModel):

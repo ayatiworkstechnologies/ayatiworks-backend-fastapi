@@ -34,7 +34,7 @@ def send_email_async(
             to_email=to_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            plain_content=text_content
         )
 
         if success:

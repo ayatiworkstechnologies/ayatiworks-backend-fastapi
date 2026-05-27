@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_RECYCLE: int = 1800
     DB_POOL_TIMEOUT: int = 30
+    AUTO_CREATE_TABLES: bool = False
 
     # JWT Authentication - REQUIRED, no default (must be in .env)
     SECRET_KEY: str = Field(..., min_length=32, description="JWT signing key - must be at least 32 characters")
@@ -49,6 +50,7 @@ class Settings(BaseSettings):
 
     # CORS — add your production frontend URL here
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8080"]
+    ENABLE_API_MIGRATIONS: bool = False
 
     # Email SMTP - REQUIRED for production
     SMTP_HOST: str = Field(default="", description="SMTP server hostname")
@@ -58,6 +60,18 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = Field(default="noreply@example.com", description="From email address")
     SMTP_FROM_NAME: str = "Ayatiworks Tech"
     SMTP_USE_TLS: bool = True
+
+    @field_validator('DEBUG', mode='before')
+    @classmethod
+    def validate_debug_flag(cls, v):
+        """Accept common non-boolean deployment values for DEBUG."""
+        if isinstance(v, str):
+            normalized = v.strip().lower()
+            if normalized in {"release", "production", "prod"}:
+                return False
+            if normalized in {"development", "dev"}:
+                return True
+        return v
 
     @field_validator('SECRET_KEY')
     @classmethod
@@ -74,6 +88,17 @@ class Settings(BaseSettings):
 
     # Redis (for caching & Celery)
     REDIS_URL: str | None = Field(default=None, description="Redis connection URL")
+
+    # OpenAI / Bot AI
+    OPENAI_API_KEY: str | None = Field(default=None, description="OpenAI API key for bot responses and embeddings")
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_RESPONSE_MODEL: str = "gpt-4.1-mini"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    BOT_RAG_TOP_K: int = 4
+    BOT_RAG_CHUNK_SIZE: int = 800
+    BOT_RAG_CHUNK_OVERLAP: int = 120
+    BOT_WEBSITE_MAX_PAGES: int = 6
+    BOT_WEBSITE_MAX_CHARACTERS: int = 25000
 
     # Sentry (error tracking)
     SENTRY_DSN: str | None = Field(default=None, description="Sentry DSN for error tracking")

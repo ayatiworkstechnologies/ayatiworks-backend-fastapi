@@ -109,28 +109,6 @@ async def list_projects(
     return PaginatedResponse.create(items, total, page, page_size)
 
 
-@router.get("/projects/{project_id}", response_model=ProjectResponse)
-async def get_project(
-    project_id: int,
-    current_user: User = Depends(PermissionChecker("project.view")),
-    db: Session = Depends(get_db)
-):
-    """Get project by ID."""
-    project = db.query(Project).filter(
-        Project.id == project_id,
-        Project.is_deleted == False
-    ).first()
-
-    if not project:
-        raise ResourceNotFoundError("Project", project_id)
-
-    response = ProjectResponse.model_validate(project)
-    response.client_name = project.client.name if project.client else None
-    response.task_count = len([t for t in project.tasks if not t.is_deleted])
-
-    return response
-
-
 @router.get("/projects/next-code")
 async def get_next_project_code(
     current_user: User = Depends(get_current_active_user),
@@ -160,6 +138,28 @@ async def get_next_project_code(
     next_code = f"PRJ{next_num:03d}"
 
     return {"next_code": next_code}
+
+
+@router.get("/projects/{project_id}", response_model=ProjectResponse)
+async def get_project(
+    project_id: int,
+    current_user: User = Depends(PermissionChecker("project.view")),
+    db: Session = Depends(get_db)
+):
+    """Get project by ID."""
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.is_deleted == False
+    ).first()
+
+    if not project:
+        raise ResourceNotFoundError("Project", project_id)
+
+    response = ProjectResponse.model_validate(project)
+    response.client_name = project.client.name if project.client else None
+    response.task_count = len([t for t in project.tasks if not t.is_deleted])
+
+    return response
 
 
 @router.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)

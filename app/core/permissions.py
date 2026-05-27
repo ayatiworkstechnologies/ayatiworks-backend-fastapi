@@ -26,6 +26,12 @@ class PermissionCode(str, Enum):
     ROLE_EDIT = "role.edit"
     ROLE_DELETE = "role.delete"
 
+    # Permission Management
+    PERMISSION_VIEW = "permission.view"
+    PERMISSION_CREATE = "permission.create"
+    PERMISSION_EDIT = "permission.edit"
+    PERMISSION_DELETE = "permission.delete"
+
     # Settings
     SETTINGS_VIEW = "settings.view"
     SETTINGS_EDIT = "settings.edit"
@@ -119,6 +125,12 @@ class PermissionCode(str, Enum):
     TEAM_DELETE = "team.delete"
     TEAM_MANAGE_MEMBERS = "team.manage_members"
 
+    # Bots
+    BOT_VIEW = "bot.view"
+    BOT_CREATE = "bot.create"
+    BOT_EDIT = "bot.edit"
+    BOT_DELETE = "bot.delete"
+
     # Client
     CLIENT_VIEW = "client.view"
     CLIENT_CREATE = "client.create"
@@ -200,6 +212,12 @@ def get_all_permissions() -> list[dict]:
         {"code": "role.create", "name": "Create Roles", "module": "roles"},
         {"code": "role.edit", "name": "Edit Roles", "module": "roles"},
         {"code": "role.delete", "name": "Delete Roles", "module": "roles"},
+
+        # Permissions
+        {"code": "permission.view", "name": "View Permissions", "module": "permissions"},
+        {"code": "permission.create", "name": "Create Permissions", "module": "permissions"},
+        {"code": "permission.edit", "name": "Edit Permissions", "module": "permissions"},
+        {"code": "permission.delete", "name": "Delete Permissions", "module": "permissions"},
 
         # Settings
         {"code": "settings.view", "name": "View Settings", "module": "settings"},
@@ -293,6 +311,12 @@ def get_all_permissions() -> list[dict]:
         {"code": "team.edit", "name": "Edit Teams", "module": "team"},
         {"code": "team.delete", "name": "Delete Teams", "module": "team"},
         {"code": "team.manage_members", "name": "Manage Team Members", "module": "team"},
+
+        # Bots
+        {"code": "bot.view", "name": "View Bots", "module": "bots"},
+        {"code": "bot.create", "name": "Create Bots", "module": "bots"},
+        {"code": "bot.edit", "name": "Edit Bots", "module": "bots"},
+        {"code": "bot.delete", "name": "Delete Bots", "module": "bots"},
 
         # Client
         {"code": "client.view", "name": "View Clients", "module": "client"},

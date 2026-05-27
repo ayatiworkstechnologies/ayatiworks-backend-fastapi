@@ -1,6 +1,6 @@
 # Ayatiworks Tech/CRM/PMS Backend
 
-A comprehensive enterprise backend system built with FastAPI and MySQL, covering HRMS, CRM, and Project Management.
+A comprehensive Ayatiworks Tech backend system built with FastAPI and MySQL for CRM, operations, and project management.
 
 ## 🌟 Key Features
 
@@ -44,7 +44,7 @@ The system creates the following roles by default:
 3. **Initialize Database**
 
     ```bash
-    # Create DB 'enterprise_hrms' in MySQL first, then:
+    # Create DB 'ayatiworks_tech' in MySQL first, then:
     alembic upgrade head
     ```
 

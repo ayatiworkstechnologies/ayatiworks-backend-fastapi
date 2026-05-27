@@ -7,8 +7,9 @@ Employee CRUD and management.
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import PermissionChecker, get_current_active_user
-from app.core.exceptions import ResourceNotFoundError
+from app.api.deps import PermissionChecker, get_current_active_user, get_user_permissions
+from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError
+from app.core.permissions import check_permission
 from app.database import get_db
 from app.models.auth import User
 from app.schemas.common import MessageResponse, PaginatedResponse
@@ -102,11 +103,60 @@ async def list_employees(
     search: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(PermissionChecker("employee.view_all")),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """List all employees with filters and pagination."""
     service = EmployeeService(db)
+    permissions = get_user_permissions(current_user, db)
+
+    if not check_permission(permissions, "employee.view_all"):
+        if not check_permission(permissions, "employee.view"):
+            raise PermissionDeniedError("Permission denied: employee.view")
+
+        employee = service.get_by_user_id(current_user.id)
+        if not employee:
+            return PaginatedResponse.create([], 0, page, page_size)
+
+        matches_search = not search or any(
+            term and search.lower() in term.lower()
+            for term in [
+                employee.employee_code,
+                employee.user.first_name if employee.user else "",
+                employee.user.last_name if employee.user else "",
+                employee.user.email if employee.user else "",
+            ]
+        )
+        matches_status = not status or employee.employment_status == status
+        matches_company = not company_id or employee.company_id == company_id
+        matches_branch = not branch_id or employee.branch_id == branch_id
+        matches_department = not department_id or employee.department_id == department_id
+        matches_designation = not designation_id or employee.designation_id == designation_id
+
+        if not all([
+            matches_search,
+            matches_status,
+            matches_company,
+            matches_branch,
+            matches_department,
+            matches_designation,
+        ]):
+            return PaginatedResponse.create([], 0, page, page_size)
+
+        item = EmployeeListResponse(
+            id=employee.id,
+            user_id=employee.user_id,
+            employee_code=employee.employee_code,
+            first_name=employee.user.first_name if employee.user else "",
+            last_name=employee.user.last_name if employee.user else None,
+            email=employee.user.email if employee.user else "",
+            avatar=employee.user.avatar if employee.user else None,
+            department_name=employee.department.name if employee.department else None,
+            designation_name=employee.designation.name if employee.designation else None,
+            employment_status=employee.employment_status,
+            is_active=employee.is_active,
+        )
+        return PaginatedResponse.create([item], 1, 1, page_size)
 
     employees, total = service.get_all(
         company_id=company_id,
@@ -158,21 +208,19 @@ async def get_my_profile(
     return build_employee_response(employee)
 
 
-@router.get("/{employee_id}", response_model=EmployeeResponse)
-async def get_employee(
-    employee_id: int,
-    current_user: User = Depends(PermissionChecker("employee.view")),
+@router.get("/next-code", response_model=dict)
+async def get_next_employee_code(
+    prefix: str | None = None,
+    current_user: User = Depends(PermissionChecker("employee.create")),
     db: Session = Depends(get_db)
 ):
-    """Get employee by ID."""
+    """
+    Get the next available employee code.
+    Useful for auto-generating IDs in the frontend.
+    """
     service = EmployeeService(db)
-
-    employee = service.get_by_id(employee_id)
-
-    if not employee:
-        raise ResourceNotFoundError("Employee", employee_id)
-
-    return build_employee_response(employee)
+    code = service.generate_employee_code(prefix=prefix)
+    return {"code": code}
 
 
 @router.get("/code/{code}", response_model=EmployeeResponse)
@@ -192,19 +240,21 @@ async def get_employee_by_code(
     return build_employee_response(employee)
 
 
-@router.get("/next-code", response_model=dict)
-async def get_next_employee_code(
-    prefix: str | None = None,
-    current_user: User = Depends(PermissionChecker("employee.create")),
+@router.get("/{employee_id}", response_model=EmployeeResponse)
+async def get_employee(
+    employee_id: int,
+    current_user: User = Depends(PermissionChecker("employee.view")),
     db: Session = Depends(get_db)
 ):
-    """
-    Get the next available employee code.
-    Useful for auto-generating IDs in the frontend.
-    """
+    """Get employee by ID."""
     service = EmployeeService(db)
-    code = service.generate_employee_code(prefix=prefix)
-    return {"code": code}
+
+    employee = service.get_by_id(employee_id)
+
+    if not employee:
+        raise ResourceNotFoundError("Employee", employee_id)
+
+    return build_employee_response(employee)
 
 
 @router.post("", response_model=EmployeeResponse, status_code=status.HTTP_201_CREATED)
@@ -250,11 +300,22 @@ async def create_employee(
             password=raw_password  # Only include if new user was created
         )
 
-        email_service.send_email(
-            to_email=employee.user.email,
-            subject=subject,
-            html_content=html_content
-        )
+        from app.config import settings
+
+        if settings.REDIS_URL:
+            from app.tasks.email_tasks import send_email_async
+
+            send_email_async.delay(
+                to_email=employee.user.email,
+                subject=subject,
+                html_content=html_content
+            )
+        else:
+            email_service.send_email(
+                to_email=employee.user.email,
+                subject=subject,
+                html_content=html_content
+            )
     except Exception as e:
         # Log email error but don't fail the request
         import logging

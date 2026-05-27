@@ -4,6 +4,7 @@ Supports AW0001 format employee codes.
 """
 
 import enum
+import re
 from datetime import date
 
 from sqlalchemy import JSON, Boolean, Column, Date, ForeignKey, Integer, String, Text
@@ -124,21 +125,20 @@ class Employee(BaseModel, AuditMixin):
     @classmethod
     def generate_employee_code(cls, db, prefix: str = "AW") -> str:
         """Generate next employee code like AW0001, AW0002, etc."""
-        from sqlalchemy import func
-
-        # Get the last employee code
-        result = db.query(func.max(cls.employee_code)).filter(
+        codes = db.query(cls.employee_code).filter(
             cls.employee_code.like(f"{prefix}%")
-        ).scalar()
+        ).all()
 
-        if result:
-            # Extract number and increment
-            num = int(result.replace(prefix, "")) + 1
-        else:
-            num = 1
+        pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+        max_num = 0
+        for (code,) in codes:
+            match = pattern.match(code or "")
+            if not match:
+                continue
+            max_num = max(max_num, int(match.group(1)))
 
         # Format with leading zeros (4 digits)
-        return f"{prefix}{num:04d}"
+        return f"{prefix}{max_num + 1:04d}"
 
 
 class EmployeeDocument(BaseModel, AuditMixin):

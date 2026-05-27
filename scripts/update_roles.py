@@ -6,7 +6,30 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import SessionLocal
+from app.models import attendance as _attendance  # noqa: F401
+from app.models import blog as _blog  # noqa: F401
+from app.models import client as _client  # noqa: F401
+from app.models import client_module as _client_module  # noqa: F401
+from app.models import communication as _communication  # noqa: F401
+from app.models import company as _company  # noqa: F401
+from app.models import hr_advanced as _hr_advanced  # noqa: F401
+from app.models import invoice as _invoice  # noqa: F401
+from app.models import leave as _leave  # noqa: F401
+from app.models import media as _media  # noqa: F401
+from app.models import meta as _meta  # noqa: F401
+from app.models import notification as _notification  # noqa: F401
+from app.models import organization as _organization  # noqa: F401
+from app.models import payroll as _payroll  # noqa: F401
+from app.models import project as _project  # noqa: F401
+from app.models import report as _report  # noqa: F401
+from app.models import settings as _settings  # noqa: F401
+from app.models import sprint as _sprint  # noqa: F401
+from app.models import team as _team  # noqa: F401
+from app.models import ticket as _ticket  # noqa: F401
 from app.models.auth import Role, Permission, RolePermission
+from app.models.employee import Employee  # noqa: F401 - ensure mapper registration
+from app.models.organization import Department, Designation  # noqa: F401 - ensure mapper registration
+from app.models.team import TeamMember  # noqa: F401 - ensure mapper registration
 from app.core.permissions import get_all_permissions
 
 def update_roles():
