@@ -15,22 +15,24 @@ Optimised:
 import asyncio
 import csv
 import io
+import json
 import logging
 import re
 import secrets
 import ssl
 from datetime import datetime, timezone
 
-import aiosmtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+import aiosmtplib
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from jinja2 import BaseLoader, Environment
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
-from app.api.deps import PermissionChecker, get_current_active_user
+from app.api.deps import PermissionChecker
 from app.database import get_db
 from app.models.auth import User
 from app.models.client import Client
@@ -148,6 +150,39 @@ def _build_record_response(record: ClientModuleRecord, email_sent: bool = False)
         email_sent=email_sent,
         created_at=record.created_at,
         updated_at=record.updated_at,
+    )
+
+
+def _parse_record_data(value) -> dict:
+    """Normalize JSON data returned by different DB drivers."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, bytes | bytearray):
+        value = value.decode("utf-8")
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _get_table_columns(db: Session, table_name: str) -> set[str]:
+    """Return the current DB columns for a table."""
+    return {column["name"] for column in inspect(db.get_bind()).get_columns(table_name)}
+
+
+def _legacy_safe_record_response(row) -> ClientModuleRecordResponse:
+    """Build a record response from a raw row that may not contain every model column."""
+    mapping = row._mapping
+    return ClientModuleRecordResponse(
+        id=mapping["id"],
+        module_id=mapping["module_id"],
+        data=_parse_record_data(mapping.get("data")),
+        email_sent=False,
+        created_at=mapping.get("created_at"),
+        updated_at=mapping.get("updated_at"),
     )
 
 
@@ -926,22 +961,47 @@ async def list_module_records(
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    query = db.query(ClientModuleRecord).filter(
-        ClientModuleRecord.module_id == module_id,
-        ClientModuleRecord.is_deleted == False,
-    )
+    columns = _get_table_columns(db, "client_module_records")
+    required_columns = {"id", "module_id", "data"}
+    if not required_columns.issubset(columns):
+        logger.error("client_module_records missing required columns: %s", sorted(required_columns - columns))
+        raise HTTPException(status_code=500, detail="Client module records table is not ready")
+
+    select_columns = ["id", "module_id", "data"]
+    select_columns.append("created_at" if "created_at" in columns else "NULL AS created_at")
+    select_columns.append("updated_at" if "updated_at" in columns else "NULL AS updated_at")
+
+    where_parts = ["module_id = :module_id"]
+    params = {
+        "module_id": module_id,
+        "limit": page_size,
+        "offset": (page - 1) * page_size,
+    }
+
+    if "is_deleted" in columns:
+        where_parts.append("(is_deleted = 0 OR is_deleted IS NULL)")
     if search:
         # JSON text search — works for MySQL JSON columns via LIKE on cast
-        from sqlalchemy import cast, Text
-        query = query.filter(cast(ClientModuleRecord.data, Text).ilike(f"%{search}%"))
+        where_parts.append("CAST(data AS CHAR) LIKE :search")
+        params["search"] = f"%{search}%"
 
-    total = query.count()
-    records = query.order_by(ClientModuleRecord.created_at.desc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size).all()
+    where_clause = " AND ".join(where_parts)
+    order_clause = "created_at DESC, id DESC" if "created_at" in columns else "id DESC"
+
+    total = db.execute(
+        text(f"SELECT COUNT(*) FROM client_module_records WHERE {where_clause}"),  # noqa: S608
+        params,
+    ).scalar() or 0
+    records_sql = (  # noqa: S608
+        "SELECT "  # noqa: S608
+        + ", ".join(select_columns)
+        + f" FROM client_module_records WHERE {where_clause}"
+        + f" ORDER BY {order_clause} LIMIT :limit OFFSET :offset"
+    )
+    records = db.execute(text(records_sql), params).all()  # noqa: S608
 
     return PaginatedResponse.create(
-        [_build_record_response(r) for r in records],
+        [_legacy_safe_record_response(r) for r in records],
         total, page, page_size,
     )
 
