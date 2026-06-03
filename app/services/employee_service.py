@@ -195,10 +195,13 @@ class EmployeeService:
             User.role_id == Role.id,
         ).filter(
             Employee.is_deleted.is_(False),
-            ~Employee.employee_code.like("AWC%"),
+            Employee.employee_code.ilike(f"{settings.EMPLOYEE_ID_PREFIX}%"),
+            ~Employee.employee_code.ilike(f"{settings.EMPLOYEE_ID_PREFIX}C%"),
             or_(Role.code.is_(None), Role.code.notin_(["CLIENT", "SUPER_ADMIN", "ADMIN"])),
-            *self.staff_employee_code_filters(),
         )
+
+        if company_id:
+            query = query.filter(Employee.company_id == company_id)
 
         if branch_id:
             query = query.filter(Employee.branch_id == branch_id)
