@@ -2,6 +2,7 @@
 Role API endpoints.
 """
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,7 +34,10 @@ def list_roles(
     List all roles.
     Available to all authenticated users.
     """
-    roles = db.query(Role).filter(Role.is_active == True).offset(skip).limit(limit).all()
+    roles = db.query(Role).filter(
+        Role.is_active.is_(True),
+        Role.is_deleted.is_(False),
+    ).offset(skip).limit(limit).all()
     return roles
 
 
@@ -46,7 +50,10 @@ def get_role(
     """
     Get a single role with full permission details by ID.
     """
-    role = db.query(Role).filter(Role.id == role_id).first()
+    role = db.query(Role).filter(
+        Role.id == role_id,
+        Role.is_deleted.is_(False),
+    ).first()
     if not role:
         raise HTTPException(
             status_code=404,
@@ -54,10 +61,13 @@ def get_role(
         )
 
     # Get permissions
-    role_perms = db.query(RolePermission).filter(RolePermission.role_id == role.id).all()
+    role_perms = db.query(RolePermission).filter(
+        RolePermission.role_id == role.id,
+        RolePermission.is_deleted.is_(False),
+    ).all()
     permissions = []
     for rp in role_perms:
-        if rp.permission:
+        if rp.permission and not rp.permission.is_deleted:
             permissions.append(rp.permission)
 
     # Build response
@@ -89,7 +99,10 @@ def create_role(
     Create new custom role (Admin/Super Admin only).
     """
     # Check if role code already exists
-    existing_role = db.query(Role).filter(Role.code == role_in.code).first()
+    existing_role = db.query(Role).filter(
+        Role.code == role_in.code,
+        Role.is_deleted.is_(False),
+    ).first()
     if existing_role:
         raise HTTPException(
             status_code=400,
@@ -98,7 +111,7 @@ def create_role(
 
     # Create role
     role_data = role_in.model_dump(exclude={"permission_ids"})
-    role = Role(**role_data, is_system=False, is_active=True)
+    role = Role(**role_data, is_system=False, is_active=True, created_by=current_user.id)
     db.add(role)
     db.commit()
     db.refresh(role)
@@ -107,7 +120,10 @@ def create_role(
     if role_in.permission_ids:
         for pid in role_in.permission_ids:
             # Verify permission exists
-            perm = db.query(Permission).filter(Permission.id == pid).first()
+            perm = db.query(Permission).filter(
+                Permission.id == pid,
+                Permission.is_deleted.is_(False),
+            ).first()
             if perm:
                 rp = RolePermission(role_id=role.id, permission_id=pid)
                 db.add(rp)
@@ -128,7 +144,10 @@ def update_role(
     Update a role (Admin/Super Admin only).
     System roles can be updated but not deleted.
     """
-    role = db.query(Role).filter(Role.id == role_id).first()
+    role = db.query(Role).filter(
+        Role.id == role_id,
+        Role.is_deleted.is_(False),
+    ).first()
     if not role:
         raise HTTPException(
             status_code=404,
@@ -139,6 +158,8 @@ def update_role(
     for field, value in update_data.items():
         setattr(role, field, value)
 
+    role.updated_by = current_user.id
+    role.updated_at = datetime.utcnow()
     db.add(role)
     db.commit()
     db.refresh(role)
@@ -155,7 +176,10 @@ def update_role_permissions(
     """
     Add or remove permissions from a role (Admin/Super Admin only).
     """
-    role = db.query(Role).filter(Role.id == role_id).first()
+    role = db.query(Role).filter(
+        Role.id == role_id,
+        Role.is_deleted.is_(False),
+    ).first()
     if not role:
         raise HTTPException(
             status_code=404,
@@ -169,12 +193,16 @@ def update_role_permissions(
             # Check if already exists
             existing = db.query(RolePermission).filter(
                 RolePermission.role_id == role.id,
-                RolePermission.permission_id == pid
+                RolePermission.permission_id == pid,
+                RolePermission.is_deleted.is_(False),
             ).first()
 
             if not existing:
                 # Verify permission exists
-                perm = db.query(Permission).filter(Permission.id == pid).first()
+                perm = db.query(Permission).filter(
+                    Permission.id == pid,
+                    Permission.is_deleted.is_(False),
+                ).first()
                 if perm:
                     rp = RolePermission(role_id=role.id, permission_id=pid)
                     db.add(rp)
@@ -186,10 +214,17 @@ def update_role_permissions(
         for pid in perm_update.remove_permission_ids:
             deleted = db.query(RolePermission).filter(
                 RolePermission.role_id == role.id,
-                RolePermission.permission_id == pid
-            ).delete()
+                RolePermission.permission_id == pid,
+                RolePermission.is_deleted.is_(False),
+            ).update({
+                "is_deleted": True,
+                "deleted_at": datetime.utcnow(),
+                "deleted_by": current_user.id,
+            })
             removed_count += deleted
 
+    role.updated_by = current_user.id
+    role.updated_at = datetime.utcnow()
     db.commit()
 
     return MessageResponse(
@@ -207,7 +242,10 @@ def delete_role(
     Delete a role (Admin/Super Admin only).
     System roles cannot be deleted.
     """
-    role = db.query(Role).filter(Role.id == role_id).first()
+    role = db.query(Role).filter(
+        Role.id == role_id,
+        Role.is_deleted.is_(False),
+    ).first()
     if not role:
         raise HTTPException(
             status_code=404,
@@ -222,15 +260,25 @@ def delete_role(
         )
 
     # Check if role is assigned to any users
-    users_with_role = db.query(User).filter(User.role_id == role.id).count()
+    users_with_role = db.query(User).filter(
+        User.role_id == role.id,
+        User.is_deleted.is_(False),
+    ).count()
     if users_with_role > 0:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot delete role. It is assigned to {users_with_role} user(s). Please reassign those users first.",
         )
 
-    # Delete the role (cascade will delete role_permissions)
-    db.delete(role)
+    role.soft_delete(current_user.id)
+    db.query(RolePermission).filter(
+        RolePermission.role_id == role.id,
+        RolePermission.is_deleted.is_(False),
+    ).update({
+        "is_deleted": True,
+        "deleted_at": datetime.utcnow(),
+        "deleted_by": current_user.id,
+    })
     db.commit()
 
     return MessageResponse(message=f"Role '{role.name}' deleted successfully")

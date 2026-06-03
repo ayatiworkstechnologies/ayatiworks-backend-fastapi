@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -29,6 +30,9 @@ class EmailService:
         self.password = settings.SMTP_PASSWORD
         self.from_email = settings.SMTP_FROM_EMAIL
         self.from_name = settings.SMTP_FROM_NAME
+        self.use_tls = settings.SMTP_USE_TLS
+        self.frontend_url = self._normalize_base_url(settings.FRONTEND_URL)
+        self.admin_url = self._normalize_base_url(settings.ADMIN_URL or settings.FRONTEND_URL)
 
         # Setup Jinja2 template environment
         template_dir = Path(__file__).parent.parent / 'templates'
@@ -39,22 +43,44 @@ class EmailService:
 
         # Default template context
         self.default_context = {
-            'company_name': getattr(settings, 'COMPANY_NAME', 'Ayatiworks Tech'),
-            'company_address': getattr(settings, 'COMPANY_ADDRESS', ''),
-            'company_website': getattr(settings, 'COMPANY_WEBSITE', ''),
-            'support_email': getattr(settings, 'SUPPORT_EMAIL', self.from_email),
+            'company_name': settings.COMPANY_NAME,
+            'company_address': settings.COMPANY_ADDRESS,
+            'company_website': settings.COMPANY_WEBSITE,
+            'support_email': settings.SUPPORT_EMAIL or self.from_email,
             'current_year': datetime.now().year,
-            'login_url': getattr(settings, 'FRONTEND_URL', 'http://localhost:3000') + '/login',
+            'frontend_url': self.frontend_url,
+            'admin_url': self.admin_url,
+            'login_url': self.build_app_url('/login'),
+            'dashboard_url': self.build_app_url('/dashboard'),
         }
+
+    @staticmethod
+    def _normalize_base_url(url: str) -> str:
+        """Normalize configured app URL for reliable email links."""
+        clean_url = (url or "https://admin.ayatiworks.com").strip().rstrip("/")
+        if not clean_url.startswith(("http://", "https://")):
+            clean_url = f"https://{clean_url}"
+        return clean_url
+
+    def build_app_url(self, path: str = "") -> str:
+        """Build an absolute admin URL for email CTAs."""
+        clean_path = (path or "").strip()
+        if clean_path.startswith(("http://", "https://")):
+            return clean_path
+        return urljoin(f"{self.admin_url}/", clean_path.lstrip("/"))
 
     def _create_connection(self):
         """Create SMTP connection with SSL."""
+        if not self.host or not self.user or not self.password:
+            raise RuntimeError("SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD.")
+
         context = ssl.create_default_context()
         if self.port == 465:
-            server = smtplib.SMTP_SSL(self.host, self.port, context=context)
+            server = smtplib.SMTP_SSL(self.host, self.port, context=context, timeout=20)
         else:
-            server = smtplib.SMTP(self.host, self.port)
-            server.starttls(context=context)
+            server = smtplib.SMTP(self.host, self.port, timeout=20)
+            if self.use_tls:
+                server.starttls(context=context)
 
         server.login(self.user, self.password)
         return server
@@ -121,6 +147,7 @@ class EmailService:
                 recipients.extend(cc)
             if bcc:
                 recipients.extend(bcc)
+            recipients = [recipient for recipient in recipients if recipient]
 
             # Send email
             with self._create_connection() as server:
@@ -281,7 +308,7 @@ class EmailService:
             'approver_comments': approver_comments,
             'leave_balances': leave_balances or [],
             'reason': reason,
-            'dashboard_url': f"{self.default_context.get('login_url', '')}/leaves",
+            'dashboard_url': self.build_app_url('/leaves'),
         }
 
         return self.send_templated_email(
@@ -425,7 +452,7 @@ class EmailService:
             'client_name': project_data.get('client_name', 'N/A'),
             'start_date': project_data.get('start_date'),
             'end_date': project_data.get('end_date'),
-            'dashboard_url': f"{self.default_context.get('login_url', '')}/projects/{project_data.get('id')}",
+            'dashboard_url': self.build_app_url(f"/projects/{project_data.get('id')}"),
         }
 
         return self.send_templated_email(
@@ -452,7 +479,7 @@ class EmailService:
             'manager_name': manager_name,
             'role': role,
             'start_date': start_date,
-            'dashboard_url': f"{self.default_context.get('login_url', '')}/projects/{project_id}",
+            'dashboard_url': self.build_app_url(f"/projects/{project_id}"),
         }
 
         return self.send_templated_email(
@@ -479,7 +506,7 @@ class EmailService:
             'department_name': department_name,
             'team_lead_name': team_lead_name,
             'role': role,
-            'dashboard_url': f"{self.default_context.get('login_url', '')}/teams/{team_id}",
+            'dashboard_url': self.build_app_url(f"/teams/{team_id}"),
         }
 
         return self.send_templated_email(
@@ -526,12 +553,16 @@ def employee_welcome_email(
 
 
 def generic_notification_email(
-    recipient_name: str,
-    title: str,
-    message: str,
-    action_url: str | None = None
+    recipient_name: str | None = None,
+    title: str = "",
+    message: str = "",
+    action_url: str | None = None,
+    name: str | None = None,
+    link: str | None = None,
 ) -> tuple[str, str]:
     """Generate generic notification email."""
+    recipient_name = recipient_name or name or "User"
+    action_url = email_service.build_app_url(action_url or link) if (action_url or link) else None
     context = {
         'recipient_name': recipient_name,
         'notification_title': title,
@@ -560,8 +591,102 @@ def task_assigned_email(
         'assigned_by': assigned_by,
         'priority': priority,
         'due_date': due_date,
-        'dashboard_url': f"{email_service.default_context.get('login_url', '')}/tasks"
+        'dashboard_url': email_service.build_app_url('/tasks')
     }
 
     html_content = email_service.render_template('email/task_assigned.html', context)
     return f"New Task Assigned: {task_title}", html_content
+
+
+def get_base_template(title: str, content: str) -> str:
+    """Render arbitrary event content inside the branded base email template."""
+    template = email_service.jinja_env.from_string(
+        '{% extends "email/base.html" %}{% block content %}{{ content|safe }}{% endblock %}'
+    )
+    return template.render(
+        **email_service.default_context,
+        title=title,
+        content=content,
+    )
+
+
+def welcome_email_content(
+    name: str,
+    email: str,
+    temp_password: str | None = None,
+) -> str:
+    """Generate welcome email HTML for async task compatibility."""
+    return email_service.render_template(
+        'email/welcome.html',
+        {
+            'employee_name': name,
+            'email': email,
+            'employee_id': '',
+            'temp_password': temp_password,
+        },
+    )
+
+
+def leave_request_email(
+    manager_name: str,
+    employee_name: str,
+    leave_type: str,
+    start_date: str,
+    end_date: str,
+    days: int,
+    reason: str | None = None,
+) -> tuple[str, str]:
+    """Generate manager email for a new leave request."""
+    details = {
+        "Employee": employee_name,
+        "Leave Type": leave_type,
+        "From": start_date,
+        "To": end_date,
+        "Days": days,
+    }
+    if reason:
+        details["Reason"] = reason
+
+    html_content = email_service.render_template(
+        'email/notification.html',
+        {
+            'recipient_name': manager_name,
+            'notification_title': f"Leave Request from {employee_name}",
+            'notification_message': f"{employee_name} requested {days} day(s) of {leave_type} leave.",
+            'details': details,
+            'action_url': email_service.build_app_url('/leaves'),
+            'action_text': 'Review Leave Request',
+        },
+    )
+    return f"Leave Request from {employee_name}", html_content
+
+
+def leave_status_email(
+    employee_name: str,
+    leave_type: str,
+    start_date: str,
+    end_date: str,
+    status: str,
+    approved_by: str | None = None,
+    remarks: str | None = None,
+) -> tuple[str, str]:
+    """Generate employee email for leave approval/rejection updates."""
+    html_content = email_service.render_template(
+        'email/leave_status.html',
+        {
+            'employee_name': employee_name,
+            'leave_type': leave_type,
+            'from_date': start_date,
+            'to_date': end_date,
+            'duration': '',
+            'status': status.capitalize(),
+            'status_emoji': '',
+            'status_color': '#28a745' if status.lower() == 'approved' else '#dc3545',
+            'approver_name': approved_by,
+            'approver_comments': remarks,
+            'leave_balances': [],
+            'reason': None,
+            'dashboard_url': email_service.build_app_url('/leaves'),
+        },
+    )
+    return f"Leave {status.capitalize()}", html_content

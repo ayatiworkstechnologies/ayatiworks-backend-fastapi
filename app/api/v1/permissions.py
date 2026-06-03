@@ -3,6 +3,7 @@ Permission API endpoints.
 """
 
 from collections import defaultdict
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from app.api.deps import get_current_active_superuser, get_current_active_user, 
 from app.core.permissions import check_permission
 from app.database import get_db
 from app.models.auth import Permission, RolePermission, User
+from app.schemas.common import MessageResponse
 from app.schemas.permission import (
     PermissionCreate,
     PermissionGroupedResponse,
@@ -33,7 +35,10 @@ def list_all_permissions_grouped(
     List all permissions grouped by module.
     Available to all authenticated users.
     """
-    permissions = db.query(Permission).filter(Permission.is_active == True).all()
+    permissions = db.query(Permission).filter(
+        Permission.is_active.is_(True),
+        Permission.is_deleted.is_(False),
+    ).all()
 
     # Group by module
     grouped: dict[str, list[Permission]] = defaultdict(list)
@@ -64,12 +69,13 @@ def get_role_permissions(
     Get all permissions assigned to a specific role.
     """
     role_perms = db.query(RolePermission).filter(
-        RolePermission.role_id == role_id
+        RolePermission.role_id == role_id,
+        RolePermission.is_deleted.is_(False),
     ).all()
 
     permissions = []
     for rp in role_perms:
-        if rp.permission:
+        if rp.permission and not rp.permission.is_deleted:
             permissions.append(rp.permission)
 
     return permissions
@@ -87,12 +93,13 @@ def get_my_permissions(
         return []
 
     role_perms = db.query(RolePermission).filter(
-        RolePermission.role_id == current_user.role_id
+        RolePermission.role_id == current_user.role_id,
+        RolePermission.is_deleted.is_(False),
     ).all()
 
     permissions = []
     for rp in role_perms:
-        if rp.permission:
+        if rp.permission and not rp.permission.is_deleted:
             permissions.append(rp.permission)
 
     return permissions
@@ -127,7 +134,7 @@ def list_permissions(
     """
     List permissions with optional filtering by module.
     """
-    query = db.query(Permission)
+    query = db.query(Permission).filter(Permission.is_deleted.is_(False))
 
     if module:
         query = query.filter(Permission.module == module)
@@ -145,7 +152,10 @@ def get_permission(
     """
     Get a single permission by ID.
     """
-    permission = db.query(Permission).filter(Permission.id == permission_id).first()
+    permission = db.query(Permission).filter(
+        Permission.id == permission_id,
+        Permission.is_deleted.is_(False),
+    ).first()
     if not permission:
         raise HTTPException(
             status_code=404,
@@ -163,7 +173,10 @@ def create_permission(
     """
     Create new permission (Super Admin only).
     """
-    permission = db.query(Permission).filter(Permission.code == permission_in.code).first()
+    permission = db.query(Permission).filter(
+        Permission.code == permission_in.code,
+        Permission.is_deleted.is_(False),
+    ).first()
     if permission:
         raise HTTPException(
             status_code=400,
@@ -187,7 +200,10 @@ def update_permission(
     """
     Update a permission (Super Admin only).
     """
-    permission = db.query(Permission).filter(Permission.id == permission_id).first()
+    permission = db.query(Permission).filter(
+        Permission.id == permission_id,
+        Permission.is_deleted.is_(False),
+    ).first()
     if not permission:
         raise HTTPException(
             status_code=404,
@@ -198,31 +214,42 @@ def update_permission(
     for field, value in update_data.items():
         setattr(permission, field, value)
 
+    permission.updated_at = datetime.utcnow()
     db.add(permission)
     db.commit()
     db.refresh(permission)
     return permission
 
 
-@router.delete("/{permission_id}", response_model=PermissionResponse)
+@router.delete("/{permission_id}", response_model=MessageResponse)
 def delete_permission(
     permission_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> Any:
     """
-    Delete a permission (Super Admin only).
-    Warning: This will remove it from all roles.
+    Soft delete a permission (Super Admin only).
+    Related role assignments are soft-deleted so they no longer grant access.
     """
-    permission = db.query(Permission).filter(Permission.id == permission_id).first()
+    permission = db.query(Permission).filter(
+        Permission.id == permission_id,
+        Permission.is_deleted.is_(False),
+    ).first()
     if not permission:
         raise HTTPException(
             status_code=404,
             detail="The permission does not exist in the system",
         )
 
-    # Could add check to prevent deletion if in use
-    db.delete(permission)
+    permission.soft_delete(current_user.id)
+    db.query(RolePermission).filter(
+        RolePermission.permission_id == permission.id,
+        RolePermission.is_deleted.is_(False),
+    ).update({
+        "is_deleted": True,
+        "deleted_at": datetime.utcnow(),
+        "deleted_by": current_user.id,
+    })
     db.commit()
-    return permission
+    return MessageResponse(message="Permission deleted successfully")
 

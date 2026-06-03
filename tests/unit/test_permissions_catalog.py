@@ -12,3 +12,4 @@ def test_permission_management_codes_exist_in_catalog():
     assert "bot.create" in permissions
     assert "bot.edit" in permissions
     assert "bot.delete" in permissions
+    assert "announcement.create" in permissions

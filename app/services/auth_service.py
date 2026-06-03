@@ -186,12 +186,13 @@ class AuthService:
             return []
 
         role_permissions = self.db.query(RolePermission).filter(
-            RolePermission.role_id == user.role_id
+            RolePermission.role_id == user.role_id,
+            RolePermission.is_deleted.is_(False),
         ).all()
 
         permissions = []
         for rp in role_permissions:
-            if rp.permission:
+            if rp.permission and rp.permission.is_active and not rp.permission.is_deleted:
                 permissions.append(rp.permission.code)
 
         return permissions

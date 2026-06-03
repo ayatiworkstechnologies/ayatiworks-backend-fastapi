@@ -2,15 +2,19 @@
 User management API routes - Complete CRUD for users table.
 """
 
+import os
+from contextlib import suppress
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import PermissionChecker, get_current_user
+from app.config import get_settings
 from app.core.security import hash_password
 from app.database import get_db
 from app.models.auth import Role, User
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
+from app.services.storage_service import upload_bytes
 
 router = APIRouter(prefix="/users", tags=["User Management"])
 
@@ -28,7 +32,7 @@ async def list_users(
     List all users from the users table.
     Requires user.view permission.
     """
-    query = db.query(User).filter(User.is_deleted == False)
+    query = db.query(User).filter(User.is_deleted.is_(False))
 
     if is_active is not None:
         query = query.filter(User.is_active == is_active)
@@ -53,7 +57,7 @@ async def get_user(
     """
     user = db.query(User).filter(
         User.id == user_id,
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).first()
 
     if not user:
@@ -127,7 +131,7 @@ async def update_user(
     """
     user = db.query(User).filter(
         User.id == user_id,
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).first()
 
     if not user:
@@ -183,7 +187,7 @@ async def delete_user(
     """
     user = db.query(User).filter(
         User.id == user_id,
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).first()
 
     if not user:
@@ -218,7 +222,7 @@ async def activate_user(
     """
     user = db.query(User).filter(
         User.id == user_id,
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).first()
 
     if not user:
@@ -246,7 +250,7 @@ async def deactivate_user(
     """
     user = db.query(User).filter(
         User.id == user_id,
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).first()
 
     if not user:
@@ -282,7 +286,7 @@ async def update_user_role(
     """
     user = db.query(User).filter(
         User.id == user_id,
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).first()
 
     if not user:
@@ -319,7 +323,7 @@ async def verify_user(
     """
     user = db.query(User).filter(
         User.id == user_id,
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).first()
 
     if not user:
@@ -360,7 +364,7 @@ async def bulk_delete_users(
 
     users = db.query(User).filter(
         User.id.in_(user_ids),
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).all()
 
     if not users:
@@ -397,7 +401,7 @@ async def bulk_activate_users(
 
     users = db.query(User).filter(
         User.id.in_(user_ids),
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).all()
 
     activated_count = 0
@@ -436,7 +440,7 @@ async def bulk_deactivate_users(
 
     users = db.query(User).filter(
         User.id.in_(user_ids),
-        User.is_deleted == False
+        User.is_deleted.is_(False)
     ).all()
 
     deactivated_count = 0
@@ -450,13 +454,6 @@ async def bulk_deactivate_users(
     return {"message": f"{deactivated_count} users deactivated successfully", "count": deactivated_count}
 
 
-# ============== Avatar Upload Endpoint ==============
-import os
-import uuid
-from datetime import datetime
-from fastapi import File, Request, UploadFile
-from app.config import get_settings
-
 _settings = get_settings()
 AVATARS_DIR = os.path.join(_settings.UPLOAD_DIR, "avatars")
 os.makedirs(AVATARS_DIR, exist_ok=True)
@@ -467,7 +464,6 @@ MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
 
 @router.post("/avatar")
 async def upload_avatar(
-    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -490,7 +486,7 @@ async def upload_user_avatar(
     Upload avatar image for a specific user (Admin function).
     Requires user.edit permission.
     """
-    user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
+    user = db.query(User).filter(User.id == user_id, User.is_deleted.is_(False)).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -518,31 +514,27 @@ async def _save_avatar(user: User, file: UploadFile, db: Session):
             detail=f"File too large. Maximum size is {MAX_AVATAR_SIZE // (1024 * 1024)}MB"
         )
 
-    # Generate unique filename
-    unique_id = uuid.uuid4().hex[:12]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_filename = f"avatar_{user.id}_{timestamp}_{unique_id}{ext}"
-    file_path = os.path.join(AVATARS_DIR, unique_filename)
-
     # Delete old avatar if exists
     if user.avatar:
         old_filename = os.path.basename(user.avatar)
         old_path = os.path.join(AVATARS_DIR, old_filename)
         if os.path.exists(old_path):
-            try:
+            with suppress(Exception):
                 os.remove(old_path)
-            except Exception:
-                pass  # Ignore deletion errors
 
-    # Save new file
     try:
-        with open(file_path, "wb") as f:
-            f.write(content)
+        result = await upload_bytes(
+            content=content,
+            original_filename=file.filename or "avatar.jpg",
+            category="avatars",
+            content_type=file.content_type,
+            prefix=f"avatar_{user.id}",
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}") from e
 
     # Update user avatar field
-    avatar_url = f"/uploads/avatars/{unique_filename}"
+    avatar_url = result["url"]
     user.avatar = avatar_url
     db.commit()
     db.refresh(user)
@@ -550,6 +542,8 @@ async def _save_avatar(user: User, file: UploadFile, db: Session):
     return {
         "success": True,
         "avatar": avatar_url,
+        "storage": result.get("storage"),
+        "file_id": result.get("file_id"),
         "message": "Avatar updated successfully"
     }
 
@@ -569,10 +563,8 @@ async def delete_avatar(
     filename = os.path.basename(current_user.avatar)
     file_path = os.path.join(AVATARS_DIR, filename)
     if os.path.exists(file_path):
-        try:
+        with suppress(Exception):
             os.remove(file_path)
-        except Exception:
-            pass  # Ignore deletion errors
 
     # Clear avatar field
     current_user.avatar = None

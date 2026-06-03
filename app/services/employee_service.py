@@ -6,14 +6,15 @@ Handles employee CRUD and employee code generation.
 import re
 from datetime import date, datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError as SQLAlchemyIntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
 from app.core.security import generate_random_password, hash_password
-from app.models.auth import User
+from app.models.auth import Role, User
 from app.models.employee import Employee, EmployeeDocument
+from app.models.organization import Department, Designation
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 
 
@@ -54,22 +55,119 @@ class EmployeeService:
         """Get employee by ID."""
         return self.db.query(Employee).filter(
             Employee.id == employee_id,
-            Employee.is_deleted == False
+            Employee.is_deleted.is_(False)
         ).first()
 
     def get_by_user_id(self, user_id: int) -> Employee | None:
         """Get employee by user ID."""
         return self.db.query(Employee).filter(
             Employee.user_id == user_id,
-            Employee.is_deleted == False
+            Employee.is_deleted.is_(False)
         ).first()
 
     def get_by_code(self, code: str) -> Employee | None:
         """Get employee by employee code."""
         return self.db.query(Employee).filter(
             Employee.employee_code == code,
-            Employee.is_deleted == False
+            Employee.is_deleted.is_(False)
         ).first()
+
+    def get_by_code_flexible(self, code: str) -> Employee | None:
+        """Get employee by code, accepting short forms like AW001 for AW0001."""
+        for candidate in self.normalize_employee_code_candidates(code):
+            if self.is_client_employee_code(candidate):
+                continue
+            employee = self.get_by_code(candidate)
+            if employee:
+                return employee
+        return None
+
+    def normalize_employee_code_candidates(self, code: str) -> list[str]:
+        """Return possible stored employee codes for a user-entered code."""
+        normalized = (code or "").strip().upper()
+        if not normalized:
+            return []
+
+        candidates = [normalized]
+        match = re.match(r"^([A-Z]+)(\d+)$", normalized)
+        if match:
+            prefix, number = match.groups()
+            padded = f"{prefix}{int(number):0{settings.EMPLOYEE_ID_LENGTH}d}"
+            if padded not in candidates:
+                candidates.append(padded)
+
+        return candidates
+
+    def is_client_employee_code(self, code: str | None) -> bool:
+        """Return True for client portal codes such as AWC0001."""
+        client_prefix = f"{settings.EMPLOYEE_ID_PREFIX}C"
+        return bool(code and code.upper().startswith(client_prefix.upper()))
+
+    def staff_employee_code_filters(self) -> tuple:
+        """Filters that keep employee endpoints from returning client codes."""
+        client_prefix = f"{settings.EMPLOYEE_ID_PREFIX}C"
+        return (
+            Employee.employee_code.ilike(f"{settings.EMPLOYEE_ID_PREFIX}%"),
+            ~Employee.employee_code.ilike(f"{client_prefix}%"),
+        )
+
+    def get_stats(self) -> dict[str, int]:
+        """Get employee counts, excluding client-role employee records."""
+        query = self.db.query(Employee).join(User, Employee.user_id == User.id).outerjoin(
+            Role,
+            User.role_id == Role.id,
+        ).filter(
+            Employee.is_deleted.is_(False),
+            or_(Role.code.is_(None), Role.code != "CLIENT"),
+            *self.staff_employee_code_filters(),
+        )
+
+        now = datetime.utcnow()
+        month_start = datetime(now.year, now.month, 1)
+
+        total = query.count()
+        active = query.filter(Employee.employment_status == "active").count()
+        inactive = query.filter(Employee.employment_status == "inactive").count()
+        probation = query.filter(Employee.employment_status == "probation").count()
+        terminated = query.filter(Employee.employment_status == "terminated").count()
+        new_this_month = query.filter(Employee.created_at >= month_start).count()
+
+        return {
+            "total": total,
+            "active": active,
+            "inactive": inactive,
+            "probation": probation,
+            "terminated": terminated,
+            "new_this_month": new_this_month,
+        }
+
+    def validate_department_designation(
+        self,
+        department_id: int | None,
+        designation_id: int | None,
+    ) -> None:
+        """Validate that a designation belongs to the selected department."""
+        if department_id:
+            department = self.db.query(Department).filter(
+                Department.id == department_id,
+                Department.is_deleted.is_(False),
+            ).first()
+            if not department:
+                raise ValueError("Selected department does not exist.")
+
+        if designation_id:
+            designation = self.db.query(Designation).filter(
+                Designation.id == designation_id,
+                Designation.is_deleted.is_(False),
+            ).first()
+            if not designation:
+                raise ValueError("Selected designation does not exist.")
+
+            if not department_id:
+                raise ValueError("Select a department before selecting a designation.")
+
+            if designation.department_id != department_id:
+                raise ValueError("Selected designation does not belong to the selected department.")
 
     def get_all(
         self,
@@ -92,11 +190,15 @@ class EmployeeService:
             joinedload(Employee.user),
             joinedload(Employee.department),
             joinedload(Employee.designation)
-        ).filter(Employee.is_deleted == False)
-
-        # Apply filters
-        if company_id:
-            query = query.filter(Employee.company_id == company_id)
+        ).join(User, Employee.user_id == User.id).outerjoin(
+            Role,
+            User.role_id == Role.id,
+        ).filter(
+            Employee.is_deleted.is_(False),
+            ~Employee.employee_code.like("AWC%"),
+            or_(Role.code.is_(None), Role.code.notin_(["CLIENT", "SUPER_ADMIN", "ADMIN"])),
+            *self.staff_employee_code_filters(),
+        )
 
         if branch_id:
             query = query.filter(Employee.branch_id == branch_id)
@@ -111,7 +213,7 @@ class EmployeeService:
             query = query.filter(Employee.employment_status == status)
 
         if search:
-            query = query.join(User).filter(
+            query = query.filter(
                 or_(
                     Employee.employee_code.ilike(f"%{search}%"),
                     User.first_name.ilike(f"%{search}%"),
@@ -141,6 +243,10 @@ class EmployeeService:
         def normalize_fk(val):
             return None if val == 0 or val == '' else val
 
+        department_id = normalize_fk(employee_data.department_id)
+        designation_id = normalize_fk(employee_data.designation_id)
+        self.validate_department_designation(department_id, designation_id)
+
         for attempt in range(5):
             try:
                 current_user_id = user_id
@@ -168,8 +274,11 @@ class EmployeeService:
                     self.db.flush()
                     current_user_id = user.id
 
-                # Always generate employee code on the backend to keep the sequence authoritative.
-                employee_code = self.generate_employee_code()
+                # Use provided employee code or generate one automatically
+                if employee_data.employee_code:
+                    employee_code = employee_data.employee_code
+                else:
+                    employee_code = self.generate_employee_code()
 
                 # Create employee with normalized FK values
                 employee = Employee(
@@ -177,8 +286,8 @@ class EmployeeService:
                     employee_code=employee_code,
                     company_id=normalize_fk(employee_data.company_id),
                     branch_id=normalize_fk(employee_data.branch_id),
-                    department_id=normalize_fk(employee_data.department_id),
-                    designation_id=normalize_fk(employee_data.designation_id),
+                    department_id=department_id,
+                    designation_id=designation_id,
                     manager_id=normalize_fk(employee_data.manager_id),
                     joining_date=employee_data.joining_date,
                     employment_type=employee_data.employment_type,
@@ -214,6 +323,8 @@ class EmployeeService:
                 return employee
             except SQLAlchemyIntegrityError as exc:
                 self.db.rollback()
+                if employee_data.employee_code and "employee_code" in str(exc).lower():
+                    raise ValueError(f"Employee code '{employee_data.employee_code}' already exists")
                 if "employee_code" not in str(exc).lower() or attempt == 4:
                     raise
 
@@ -231,6 +342,14 @@ class EmployeeService:
 
         # Update only provided fields
         update_data = employee_data.model_dump(exclude_unset=True)
+
+        next_department_id = update_data.get('department_id', employee.department_id)
+        next_designation_id = update_data.get('designation_id', employee.designation_id)
+        if next_department_id == 0 or next_department_id == '':
+            next_department_id = None
+        if next_designation_id == 0 or next_designation_id == '':
+            next_designation_id = None
+        self.validate_department_designation(next_department_id, next_designation_id)
 
         for field, value in update_data.items():
             # Convert 0 to None for FK fields
@@ -262,16 +381,16 @@ class EmployeeService:
         """Get all employees under a manager."""
         return self.db.query(Employee).filter(
             Employee.manager_id == manager_id,
-            Employee.is_deleted == False,
-            Employee.is_active == True
+            Employee.is_deleted.is_(False),
+            Employee.is_active.is_(True)
         ).all()
 
     def get_department_employees(self, department_id: int) -> list[Employee]:
         """Get all employees in a department."""
         return self.db.query(Employee).filter(
             Employee.department_id == department_id,
-            Employee.is_deleted == False,
-            Employee.is_active == True
+            Employee.is_deleted.is_(False),
+            Employee.is_active.is_(True)
         ).all()
 
     # Document methods
@@ -308,7 +427,7 @@ class EmployeeService:
         """Get all documents for an employee."""
         return self.db.query(EmployeeDocument).filter(
             EmployeeDocument.employee_id == employee_id,
-            EmployeeDocument.is_deleted == False
+            EmployeeDocument.is_deleted.is_(False)
         ).all()
 
     def verify_document(self, document_id: int, verified_by: int) -> EmployeeDocument | None:

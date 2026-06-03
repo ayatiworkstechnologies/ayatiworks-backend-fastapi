@@ -85,11 +85,11 @@ def update_roles():
         ]
         
         roles_config = {
-            "super_admin": all_perm_codes,
-            "admin": all_perm_codes,
-            "manager": mgr_perms,
-            "employee": emp_perms,
-            "member": emp_perms # Alias for member
+            "SUPER_ADMIN": all_perm_codes,
+            "ADMIN": all_perm_codes,
+            "MANAGER": mgr_perms,
+            "EMPLOYEE": emp_perms,
+            "MEMBER": emp_perms, # Alias for member
         }
         
         # 3. Apply
@@ -99,7 +99,7 @@ def update_roles():
                 # Only create if standard roles missing. 
                 # For 'member', it might be default.
                 print(f"Creating role: {role_code}")
-                role = Role(name=role_code.replace('_', ' ').title(), code=role_code)
+                role = Role(name=role_code.replace('_', ' ').title(), code=role_code, is_system=True)
                 db.add(role)
                 db.commit()
             

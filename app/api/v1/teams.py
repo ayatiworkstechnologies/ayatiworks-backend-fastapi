@@ -4,6 +4,7 @@ Team API routes.
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError as SQLAlchemyIntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import PermissionChecker
@@ -19,10 +20,33 @@ from app.schemas.team import (
     TeamResponse,
     TeamUpdate,
 )
-from app.services.team_service import TeamService
 from app.services.email_service import email_service
+from app.services.team_service import TeamService
 
 router = APIRouter(tags=["Teams"])
+
+
+def _user_display_name(user: User | None) -> str | None:
+    """Return a user's display name without leaking a literal None last name."""
+    if not user:
+        return None
+    return user.full_name
+
+
+def _employee_display_name(employee) -> str:
+    """Return an employee's display name from the linked user profile."""
+    if not employee:
+        return ""
+    if employee.user:
+        return employee.user.full_name
+    return employee.employee_code
+
+
+def _employee_avatar(employee) -> str | None:
+    """Return an employee avatar from the linked user profile."""
+    if employee and employee.user:
+        return employee.user.avatar
+    return None
 
 
 @router.get("", response_model=PaginatedResponse[TeamListResponse])
@@ -68,7 +92,7 @@ async def list_teams(
         item = TeamListResponse.model_validate(team)
         item.member_count = service.get_member_count(team.id)
         if team.team_lead:
-            item.team_lead_name = f"{team.team_lead.first_name} {team.team_lead.last_name}"
+            item.team_lead_name = _user_display_name(team.team_lead)
         if team.department:
             item.department_name = team.department.name
         items.append(item)
@@ -90,14 +114,14 @@ async def get_team(
         raise ResourceNotFoundError("Team", team_id)
 
     # Check access (company scope)
-    if hasattr(current_user, 'company_id') and team.company_id != current_user.company_id:
+    if getattr(current_user, "company_id", None) and team.company_id != current_user.company_id:
         raise PermissionDeniedError("Not authorized to access this team")
 
     response = TeamResponse.model_validate(team)
     response.member_count = service.get_member_count(team_id)
 
     if team.team_lead:
-        response.team_lead_name = f"{team.team_lead.first_name} {team.team_lead.last_name}"
+        response.team_lead_name = _user_display_name(team.team_lead)
 
     if team.department:
         response.department_name = team.department.name
@@ -108,14 +132,13 @@ async def get_team(
     for m in members:
         mr = TeamMemberResponse.model_validate(m)
         if m.employee:
-            mr.employee_name = f"{m.employee.first_name} {m.employee.last_name}"
+            mr.employee_name = _employee_display_name(m.employee)
             # Assuming employee has relations to department/designation
             if m.employee.department:
                 mr.department_name = m.employee.department.name
             if m.employee.designation:
                 mr.designation_name = m.employee.designation.name
-            if m.employee.profile_picture:
-                mr.avatar = m.employee.profile_picture
+            mr.avatar = _employee_avatar(m.employee)
         member_responses.append(mr)
 
     response.members = member_responses
@@ -132,14 +155,13 @@ async def create_team(
     """Create a new team."""
     service = TeamService(db)
 
-    # Check if code exists
-    if service.get_by_code(data.company_id, data.code):
+    try:
+        team = service.create(data, created_by=current_user.id)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Team code already exists"
-        )
-
-    team = service.create(data, created_by=current_user.id)
+            detail=str(exc)
+        ) from exc
     return TeamResponse.model_validate(team)
 
 
@@ -153,7 +175,13 @@ async def update_team(
     """Update a team."""
     service = TeamService(db)
 
-    team = service.update(team_id, data, updated_by=current_user.id)
+    try:
+        team = service.update(team_id, data, updated_by=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        ) from exc
 
     if not team:
         raise ResourceNotFoundError("Team", team_id)
@@ -170,7 +198,7 @@ async def delete_team(
     """Delete a team."""
     service = TeamService(db)
 
-    if not service.delete(team_id):
+    if not service.delete(team_id, deleted_by=current_user.id):
         raise ResourceNotFoundError("Team", team_id)
 
     return MessageResponse(message="Team deleted successfully")
@@ -201,11 +229,11 @@ async def add_team_member(
                 team = service.get_by_id(team_id)
                 team_lead_name = "N/A"
                 if team.team_lead:
-                    team_lead_name = f"{team.team_lead.first_name} {team.team_lead.last_name}"
+                    team_lead_name = _user_display_name(team.team_lead) or "N/A"
 
                 email_service.send_team_addition_email(
                     to_email=member.employee.user.email,
-                    employee_name=f"{member.employee.first_name} {member.employee.last_name}",
+                    employee_name=_employee_display_name(member.employee),
                     team_name=team.name,
                     department_name=team.department.name if team.department else "N/A",
                     team_lead_name=team_lead_name,
@@ -219,15 +247,25 @@ async def add_team_member(
         # Hydrate response
         mr = TeamMemberResponse.model_validate(member)
         if member.employee:
-            mr.employee_name = f"{member.employee.first_name} {member.employee.last_name}"
+            mr.employee_name = _employee_display_name(member.employee)
+            if member.employee.department:
+                mr.department_name = member.employee.department.name
+            if member.employee.designation:
+                mr.designation_name = member.employee.designation.name
+            mr.avatar = _employee_avatar(member.employee)
         return mr
 
-    except Exception:
-        # Handle duplicate constraint violation usually
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Employee is already a member of this team or invalid data"
-        )
+            detail=str(exc)
+        ) from exc
+    except SQLAlchemyIntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Employee is already a member of this team"
+        ) from exc
 
 
 @router.delete("/{team_id}/members/{employee_id}", response_model=MessageResponse)

@@ -39,30 +39,20 @@ async def list_departments(
     db: Session = Depends(get_db)
 ):
     """List all departments."""
-    print("DEBUG: Entering list_departments")
     service = DepartmentService(db)
+    effective_company_id = company_id
+    if effective_company_id is None:
+        effective_company_id = current_user.company_id
 
     departments, total = service.get_all(
-        company_id=company_id,
+        company_id=effective_company_id,
         parent_id=parent_id,
         search=search,
         page=page,
         page_size=page_size
     )
-    print(f"DEBUG: Found {len(departments)} departments. Total: {total}")
 
-    # Debug individual items
-    items = []
-    for d in departments:
-        # print(f"DEBUG: Validating dept {d.id} {d.name}")
-        try:
-            item = DepartmentListResponse.model_validate(d)
-            items.append(item)
-        except Exception as e:
-            print(f"DEBUG: Validation failed for dept {d.id}: {e}")
-            raise e
-
-    print("DEBUG: Validation complete. Creating PaginatedResponse")
+    items = [DepartmentListResponse.model_validate(d) for d in departments]
     return PaginatedResponse.create(items, total, page, page_size)
 
 
@@ -191,7 +181,22 @@ async def list_designations(
         page_size=page_size
     )
 
-    items = [DesignationListResponse.model_validate(d) for d in designations]
+    items = [
+        DesignationListResponse(
+            id=designation.id,
+            name=designation.name,
+            code=designation.code,
+            description=designation.description,
+            level=designation.level,
+            department_id=designation.department_id,
+            department_name=designation.department.name if designation.department else None,
+            min_salary=designation.min_salary,
+            max_salary=designation.max_salary,
+            employee_count=service.get_employee_count(designation.id),
+            is_active=designation.is_active,
+        )
+        for designation in designations
+    ]
     return PaginatedResponse.create(items, total, page, page_size)
 
 

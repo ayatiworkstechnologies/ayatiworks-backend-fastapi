@@ -43,12 +43,12 @@ def _build_client_response(employee: Employee, db: Session) -> ClientResponse:
     if employee.user:
         client_profile = db.query(Client).filter(
             Client.user_id == employee.user.id,
-            Client.is_deleted == False,
+            Client.is_deleted.is_(False),
         ).first()
         if not client_profile and employee.user.email:
             client_profile = db.query(Client).filter(
                 Client.email == employee.user.email,
-                Client.is_deleted == False,
+                Client.is_deleted.is_(False),
             ).first()
 
     return ClientResponse(
@@ -97,7 +97,7 @@ async def list_clients(
         joinedload(Employee.department),
         joinedload(Employee.designation),
     ).join(User, Employee.user_id == User.id).filter(
-        Employee.is_deleted == False,
+        Employee.is_deleted.is_(False),
         User.role_id == client_role.id,
     )
 
@@ -136,13 +136,13 @@ async def list_clients(
     if employee_user_ids:
         uid_clients = db.query(Client).filter(
             Client.user_id.in_(employee_user_ids),
-            Client.is_deleted == False,
+            Client.is_deleted.is_(False),
         ).all()
         crm_clients_by_uid = {c.user_id: c for c in uid_clients}
     if employee_emails:
         email_clients = db.query(Client).filter(
             Client.email.in_(employee_emails),
-            Client.is_deleted == False,
+            Client.is_deleted.is_(False),
         ).all()
         crm_clients_by_email = {c.email: c for c in email_clients}
 
@@ -185,7 +185,7 @@ async def get_client(
         joinedload(Employee.designation),
     ).filter(
         Employee.id == client_id,
-        Employee.is_deleted == False
+        Employee.is_deleted.is_(False)
     ).first()
 
     if not employee:
@@ -197,9 +197,8 @@ async def get_client(
         raise ResourceNotFoundError("Client", client_id)
 
     # Role-based check: clients can only view their own profile
-    if current_user.role and current_user.role.code == 'CLIENT':
-        if employee.user_id != current_user.id:
-            raise ResourceNotFoundError("Client", client_id)
+    if current_user.role and current_user.role.code == 'CLIENT' and employee.user_id != current_user.id:
+        raise ResourceNotFoundError("Client", client_id)
 
     return _build_client_response(employee, db)
 
@@ -233,6 +232,13 @@ async def create_client(
 
     password = data.password or generate_random_password()
     service = EmployeeService(db)
+    try:
+        service.validate_department_designation(data.department_id, data.designation_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
     for attempt in range(5):
         try:
@@ -364,7 +370,7 @@ async def update_client(
         joinedload(Employee.designation),
     ).filter(
         Employee.id == client_id,
-        Employee.is_deleted == False
+        Employee.is_deleted.is_(False)
     ).first()
 
     if not employee:
@@ -376,6 +382,18 @@ async def update_client(
         raise ResourceNotFoundError("Client", client_id)
 
     update_data = data.model_dump(exclude_unset=True)
+    next_department_id = update_data.get("department_id", employee.department_id)
+    next_designation_id = update_data.get("designation_id", employee.designation_id)
+    try:
+        EmployeeService(db).validate_department_designation(
+            next_department_id if next_department_id else None,
+            next_designation_id if next_designation_id else None,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
     # Update User fields
     user_fields = {'first_name', 'last_name', 'email', 'phone', 'avatar'}
@@ -403,12 +421,12 @@ async def update_client(
     if crm_data and employee.user:
         client_profile = db.query(Client).filter(
             Client.user_id == employee.user.id,
-            Client.is_deleted == False,
+            Client.is_deleted.is_(False),
         ).first()
         if not client_profile and employee.user.email:
             client_profile = db.query(Client).filter(
                 Client.email == employee.user.email,
-                Client.is_deleted == False,
+                Client.is_deleted.is_(False),
             ).first()
         if client_profile:
             for field, value in crm_data.items():
@@ -432,7 +450,7 @@ async def delete_client(
     """Delete a client (soft delete employee with CLIENT role)."""
     employee = db.query(Employee).join(User).filter(
         Employee.id == client_id,
-        Employee.is_deleted == False
+        Employee.is_deleted.is_(False)
     ).first()
 
     if not employee:
@@ -462,7 +480,7 @@ async def list_deals(
     db: Session = Depends(get_db)
 ):
     """List all deals."""
-    query = db.query(Deal).filter(Deal.is_deleted == False)
+    query = db.query(Deal).filter(Deal.is_deleted.is_(False))
 
     if pipeline_id:
         query = query.filter(Deal.pipeline_id == pipeline_id)
@@ -511,7 +529,7 @@ async def update_deal(
     """Update a deal."""
     deal = db.query(Deal).filter(
         Deal.id == deal_id,
-        Deal.is_deleted == False
+        Deal.is_deleted.is_(False)
     ).first()
 
     if not deal:

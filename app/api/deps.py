@@ -152,10 +152,15 @@ def get_user_permissions(user: User, db: Session) -> list[str]:
     role_permissions = db.query(RolePermission).options(
         joinedload(RolePermission.permission)
     ).filter(
-        RolePermission.role_id == user.role_id
+        RolePermission.role_id == user.role_id,
+        RolePermission.is_deleted.is_(False),
     ).all()
 
-    return [rp.permission.code for rp in role_permissions if rp.permission]
+    return [
+        rp.permission.code
+        for rp in role_permissions
+        if rp.permission and rp.permission.is_active and not rp.permission.is_deleted
+    ]
 
 
 class PermissionChecker:

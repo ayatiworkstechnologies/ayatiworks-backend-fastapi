@@ -31,7 +31,7 @@ router = APIRouter(tags=["Users & Roles"])
 @router.get("/permissions", response_model=list[PermissionResponse])
 async def list_permissions(
     module: str | None = None,
-    current_user: User = Depends(PermissionChecker("role.view")),
+    current_user: User = Depends(PermissionChecker("permission.view")),
     db: Session = Depends(get_db)
 ):
     """List all available permissions."""
@@ -47,7 +47,7 @@ async def list_permissions(
 @router.post("/permissions", response_model=PermissionResponse, status_code=status.HTTP_201_CREATED)
 async def create_permission(
     data: PermissionCreate,
-    current_user: User = Depends(PermissionChecker("role.create")),
+    current_user: User = Depends(PermissionChecker("permission.create")),
     db: Session = Depends(get_db)
 ):
     """Create a new permission."""
@@ -77,7 +77,7 @@ async def create_permission(
 async def update_permission(
     permission_id: int,
     data: PermissionUpdate,
-    current_user: User = Depends(PermissionChecker("role.edit")),
+    current_user: User = Depends(PermissionChecker("permission.edit")),
     db: Session = Depends(get_db)
 ):
     """Update a permission."""
@@ -112,7 +112,7 @@ async def update_permission(
 @router.delete("/permissions/{permission_id}", response_model=MessageResponse)
 async def delete_permission(
     permission_id: int,
-    current_user: User = Depends(PermissionChecker("role.delete")),
+    current_user: User = Depends(PermissionChecker("permission.delete")),
     db: Session = Depends(get_db)
 ):
     """Delete a permission."""

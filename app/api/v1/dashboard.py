@@ -16,7 +16,7 @@ from app.database import get_db
 from alembic import command
 from alembic.config import Config
 from app.models.attendance import Attendance
-from app.models.auth import User
+from app.models.auth import User, Role
 from app.models.client import Client, Lead
 from app.models.company import Company
 from app.models.employee import Employee

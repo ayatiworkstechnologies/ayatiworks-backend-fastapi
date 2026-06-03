@@ -2,22 +2,51 @@
 Public API endpoints (No Authentication).
 """
 
-import os
-import shutil
+import logging
+import smtplib
+import ssl
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-from fastapi import APIRouter, BackgroundTasks, Body, File, Form, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from jinja2 import BaseLoader, Environment
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.api.deps import Depends, RoleChecker
-from app.config import settings
 from app.core.exceptions import ResourceNotFoundError, ValidationError
 from app.database import get_db
-from app.models.auth import User
 from app.models.ai_bot import AIBot, BotConversation, BotMessage
+from app.models.auth import User
+from app.models.client import Client
+from app.models.client_module import (
+    ClientMailTemplate,
+    ClientModule,
+    ClientModuleRecord,
+    ClientSmtpConfig,
+)
 from app.models.public import CareerApplication, ContactEnquiry
-from app.schemas.ai_bot import BotChatResponse, BotConversationResponse, BotMessageCreate, BotMessageResponse, PublicBotResponse
+from app.schemas.ai_bot import (
+    BotChatResponse,
+    BotConversationResponse,
+    BotMessageCreate,
+    BotMessageResponse,
+    PublicBotResponse,
+)
+from app.schemas.client_module import ClientModuleRecordResponse, ClientSendEmailRequest
+from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.public import (
     CareerListResponse,
     CareerResponse,
@@ -27,8 +56,11 @@ from app.schemas.public import (
     ContactResponse,
     ContactUpdate,
 )
-from app.services.email_service import email_service
 from app.services.bot_ai_service import BotAIService
+from app.services.email_service import email_service
+from app.services.storage_service import upload_bytes
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public", tags=["Public"])
 
@@ -41,9 +73,9 @@ async def get_public_bot(
     """Get a published public bot by slug."""
     bot = db.query(AIBot).filter(
         AIBot.slug == bot_slug,
-        AIBot.is_deleted == False,
-        AIBot.is_active == True,
-        AIBot.is_published == True,
+        AIBot.is_deleted.is_(False),
+        AIBot.is_active.is_(True),
+        AIBot.is_published.is_(True),
     ).first()
     if not bot:
         raise ResourceNotFoundError("Bot", bot_slug)
@@ -59,9 +91,9 @@ async def create_public_bot_conversation(
     """Create a public conversation for a published bot."""
     bot = db.query(AIBot).filter(
         AIBot.slug == bot_slug,
-        AIBot.is_deleted == False,
-        AIBot.is_active == True,
-        AIBot.is_published == True,
+        AIBot.is_deleted.is_(False),
+        AIBot.is_active.is_(True),
+        AIBot.is_published.is_(True),
     ).first()
     if not bot:
         raise ResourceNotFoundError("Bot", bot_slug)
@@ -94,9 +126,9 @@ async def send_public_bot_message(
     """Send a public chat message to a published bot."""
     bot = db.query(AIBot).filter(
         AIBot.slug == bot_slug,
-        AIBot.is_deleted == False,
-        AIBot.is_active == True,
-        AIBot.is_published == True,
+        AIBot.is_deleted.is_(False),
+        AIBot.is_active.is_(True),
+        AIBot.is_published.is_(True),
     ).first()
     if not bot:
         raise ResourceNotFoundError("Bot", bot_slug)
@@ -104,7 +136,7 @@ async def send_public_bot_message(
     conversation = db.query(BotConversation).filter(
         BotConversation.id == conversation_id,
         BotConversation.bot_id == bot.id,
-        BotConversation.is_deleted == False,
+        BotConversation.is_deleted.is_(False),
     ).first()
     if not conversation:
         raise ResourceNotFoundError("Conversation", conversation_id)
@@ -202,8 +234,7 @@ async def list_contacts(
     db: Session = Depends(get_db)
 ):
     """List contact enquiries (Admin)."""
-    # Create base query
-    query = db.query(ContactEnquiry)
+    query = db.query(ContactEnquiry).filter(ContactEnquiry.is_deleted.is_(False))
 
     # Apply filters
     if status:
@@ -223,7 +254,7 @@ async def list_contacts(
         total=total,
         page=page,
         page_size=page_size,
-        total_pages=(total + page_size - 1) // page_size
+        pages=(total + page_size - 1) // page_size
     )
 
 
@@ -234,7 +265,10 @@ async def get_contact(
     db: Session = Depends(get_db)
 ):
     """Get contact enquiry details (Admin)."""
-    enquiry = db.query(ContactEnquiry).filter(ContactEnquiry.id == id).first()
+    enquiry = db.query(ContactEnquiry).filter(
+        ContactEnquiry.id == id,
+        ContactEnquiry.is_deleted.is_(False),
+    ).first()
     if not enquiry:
         raise ResourceNotFoundError("Contact enquiry", id)
     return enquiry
@@ -248,7 +282,10 @@ async def update_contact(
     db: Session = Depends(get_db)
 ):
     """Update contact enquiry status (Admin)."""
-    enquiry = db.query(ContactEnquiry).filter(ContactEnquiry.id == id).first()
+    enquiry = db.query(ContactEnquiry).filter(
+        ContactEnquiry.id == id,
+        ContactEnquiry.is_deleted.is_(False),
+    ).first()
     if not enquiry:
         raise ResourceNotFoundError("Contact enquiry", id)
 
@@ -262,19 +299,23 @@ async def update_contact(
     return enquiry
 
 
-@router.delete("/contact/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/contact/{id}", response_model=MessageResponse)
 async def delete_contact(
     id: int,
     current_user: User = Depends(RoleChecker(["Super Admin", "Admin", "HR", "Manager"])),
     db: Session = Depends(get_db)
 ):
     """Delete contact enquiry (Admin)."""
-    enquiry = db.query(ContactEnquiry).filter(ContactEnquiry.id == id).first()
+    enquiry = db.query(ContactEnquiry).filter(
+        ContactEnquiry.id == id,
+        ContactEnquiry.is_deleted.is_(False),
+    ).first()
     if not enquiry:
         raise ResourceNotFoundError("Contact enquiry", id)
 
-    db.delete(enquiry)
+    enquiry.soft_delete(current_user.id)
     db.commit()
+    return MessageResponse(message="Contact enquiry deleted successfully")
 
 
 # =======================
@@ -310,25 +351,19 @@ async def submit_application(
         if resume.content_type not in allowed_types:
             raise ValidationError("Invalid file type. Only PDF and Word documents are allowed.", field="resume")
 
-        # Create directory
-        upload_dir = os.path.join(settings.UPLOAD_DIR, "resumes")
-        os.makedirs(upload_dir, exist_ok=True)
-
-        # Generate generic filename to look clean but avoid collisions
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        safe_name = f"{first_name}_{last_name}_{timestamp}_{resume.filename}".replace(" ", "_")
-        file_path = os.path.join(upload_dir, safe_name)
-
         try:
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(resume.file, buffer)
-
-            # Use relative path or full URL depending on storage strategy
-            # Here assuming local storage, we'll store relative path
-            resume_path = f"/uploads/resumes/{safe_name}"
+            content = await resume.read()
+            result = await upload_bytes(
+                content=content,
+                original_filename=resume.filename or "resume.pdf",
+                category="resumes",
+                content_type=resume.content_type,
+                prefix=f"{first_name}_{last_name}".replace(" ", "_"),
+            )
+            resume_path = result["url"]
 
         except Exception as e:
-            raise ValidationError(f"Failed to upload resume: {str(e)}", field="resume")
+            raise ValidationError(f"Failed to upload resume: {str(e)}", field="resume") from e
 
     # Create record
     application = CareerApplication(
@@ -383,7 +418,7 @@ async def list_applications(
     db: Session = Depends(get_db)
 ):
     """List job applications (Admin)."""
-    query = db.query(CareerApplication)
+    query = db.query(CareerApplication).filter(CareerApplication.is_deleted.is_(False))
 
     if status:
         query = query.filter(CareerApplication.status == status)
@@ -401,7 +436,7 @@ async def list_applications(
         total=total,
         page=page,
         page_size=page_size,
-        total_pages=(total + page_size - 1) // page_size
+        pages=(total + page_size - 1) // page_size
     )
 
 
@@ -412,7 +447,10 @@ async def get_application(
     db: Session = Depends(get_db)
 ):
     """Get job application details (Admin)."""
-    application = db.query(CareerApplication).filter(CareerApplication.id == id).first()
+    application = db.query(CareerApplication).filter(
+        CareerApplication.id == id,
+        CareerApplication.is_deleted.is_(False),
+    ).first()
     if not application:
         raise ResourceNotFoundError("Job application", id)
     return application
@@ -426,7 +464,10 @@ async def update_application(
     db: Session = Depends(get_db)
 ):
     """Update job application status (Admin)."""
-    application = db.query(CareerApplication).filter(CareerApplication.id == id).first()
+    application = db.query(CareerApplication).filter(
+        CareerApplication.id == id,
+        CareerApplication.is_deleted.is_(False),
+    ).first()
     if not application:
         raise ResourceNotFoundError("Job application", id)
 
@@ -439,46 +480,31 @@ async def update_application(
     return application
 
 
-@router.delete("/careers/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/careers/{id}", response_model=MessageResponse)
 async def delete_application(
     id: int,
     current_user: User = Depends(RoleChecker(["Super Admin", "Admin", "HR", "Manager"])),
     db: Session = Depends(get_db)
 ):
     """Delete job application (Admin)."""
-    application = db.query(CareerApplication).filter(CareerApplication.id == id).first()
+    application = db.query(CareerApplication).filter(
+        CareerApplication.id == id,
+        CareerApplication.is_deleted.is_(False),
+    ).first()
     if not application:
         raise ResourceNotFoundError("Job application", id)
 
-    db.delete(application)
+    application.soft_delete(current_user.id)
     db.commit()
+    return MessageResponse(message="Job application deleted successfully")
 
 
-
-# =======================
-# Dynamic Public API (API Key Protected)
-# =======================
-
-from fastapi import Header, HTTPException
-from app.models.client import Client
-from app.models.client_module import ClientModule, ClientModuleRecord, ClientSmtpConfig, ClientMailTemplate
-from app.schemas.client_module import ClientSendEmailRequest, ClientModuleRecordResponse
-from app.schemas.common import MessageResponse, PaginatedResponse
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-import smtplib
-import ssl
-from jinja2 import Environment, BaseLoader
-import logging
-
-logger = logging.getLogger(__name__)
 
 def get_client_by_api_key(
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: Session = Depends(get_db)
 ) -> User:  # Returning Client actually
-    from app.models.client import Client
-    client = db.query(Client).filter(Client.api_key == x_api_key, Client.is_deleted == False).first()
+    client = db.query(Client).filter(Client.api_key == x_api_key, Client.is_deleted.is_(False)).first()
     if not client:
         raise HTTPException(status_code=401, detail="Invalid API Key")
     return client
@@ -501,7 +527,7 @@ async def public_send_email(
     # Get client SMTP config
     smtp_config = db.query(ClientSmtpConfig).filter(
         ClientSmtpConfig.client_id == client.id,
-        ClientSmtpConfig.is_deleted == False,
+        ClientSmtpConfig.is_deleted.is_(False),
     ).first()
 
     # Resolve subject and body
@@ -512,7 +538,7 @@ async def public_send_email(
         template = db.query(ClientMailTemplate).filter(
             ClientMailTemplate.id == data.template_id,
             ClientMailTemplate.client_id == client.id,
-            ClientMailTemplate.is_deleted == False,
+            ClientMailTemplate.is_deleted.is_(False),
         ).first()
         if not template:
             raise HTTPException(status_code=404, detail="Mail template not found")
@@ -525,7 +551,7 @@ async def public_send_email(
 
     # Variable substitution using Jinja2
     if data.variables:
-        jinja_env = Environment(loader=BaseLoader())
+        jinja_env = Environment(loader=BaseLoader(), autoescape=True)
         try:
             subject_tmpl = jinja_env.from_string(subject)
             subject = subject_tmpl.render(**data.variables)
@@ -534,7 +560,7 @@ async def public_send_email(
             html_body = body_tmpl.render(**data.variables)
         except Exception as e:
             logger.error(f"Template rendering error: {e}")
-            raise HTTPException(status_code=400, detail=f"Template rendering error: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Template rendering error: {str(e)}") from e
 
     # Use System SMTP if no client config
     if not smtp_config:
@@ -553,7 +579,7 @@ async def public_send_email(
             return MessageResponse(message=f"Email sent successfully via System SMTP to {data.to_email}")
         except Exception as e:
              logger.error(f"System email sending failed for client {client.id}: {e}")
-             raise HTTPException(status_code=500, detail=f"Failed to send email via System SMTP: {str(e)}")
+             raise HTTPException(status_code=500, detail=f"Failed to send email via System SMTP: {str(e)}") from e
 
     # Use Client Custom SMTP
     try:
@@ -600,7 +626,7 @@ async def public_send_email(
 
     except Exception as e:
         logger.error(f"Email sending failed for client {client.id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}") from e
 
 
 @router.get("/{client_slug}/{module_slug}/records", response_model=PaginatedResponse[ClientModuleRecordResponse])
@@ -620,14 +646,14 @@ async def public_list_records(
     module = db.query(ClientModule).filter(
         ClientModule.client_id == client.id,
         ClientModule.slug == module_slug,
-        ClientModule.is_deleted == False,
+        ClientModule.is_deleted.is_(False),
     ).first()
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
     query = db.query(ClientModuleRecord).filter(
         ClientModuleRecord.module_id == module.id,
-        ClientModuleRecord.is_deleted == False,
+        ClientModuleRecord.is_deleted.is_(False),
     )
     # Simple search implementation if needed later
 
@@ -664,7 +690,7 @@ async def public_create_record(
     module = db.query(ClientModule).filter(
         ClientModule.client_id == client.id,
         ClientModule.slug == module_slug,
-        ClientModule.is_deleted == False,
+        ClientModule.is_deleted.is_(False),
     ).first()
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -689,7 +715,7 @@ async def public_create_record(
         module_id=module.id,
         data=record_data,
         is_active=is_active,
-        # Created by is None for public API or maybe a system user? 
+        # Created by is None for public API or maybe a system user?
         # For now leaving it null or we could track it via API key if we wanted.
     )
     db.add(record)
@@ -703,13 +729,13 @@ async def public_create_record(
             template = db.query(ClientMailTemplate).filter(
                 ClientMailTemplate.id == module.mail_template_id,
                 ClientMailTemplate.client_id == client.id,
-                ClientMailTemplate.is_deleted == False
+                ClientMailTemplate.is_deleted.is_(False)
             ).first()
 
             if template:
                 # 2. Determine Recipient
                 to_email = template.to_email
-                jinja_env = Environment(loader=BaseLoader())
+                jinja_env = Environment(loader=BaseLoader(), autoescape=True)
 
                 # If template has a defined recipient, try to render it (handles {{email}} or static admin@example.com)
                 if to_email:
@@ -718,7 +744,7 @@ async def public_create_record(
                         to_email = to_email_tmpl.render(**record.data).strip()
                     except Exception as e:
                         logger.warning(f"Failed to render to_email template '{to_email}': {e}")
-                        # If render fails but it looked like a simple email, keep it. 
+                        # If render fails but it looked like a simple email, keep it.
                         # If it was purely a variable {{x}} that failed, it might be empty now.
                         pass
 
@@ -729,7 +755,7 @@ async def public_create_record(
                     # 3. Render Content
                     subject = template.subject
                     html_body = template.html_body
-                    
+
                     try:
                         subject_tmpl = jinja_env.from_string(subject)
                         subject = subject_tmpl.render(**record.data)
@@ -758,7 +784,7 @@ async def public_create_record(
 
                         smtp_config = db.query(ClientSmtpConfig).filter(
                             ClientSmtpConfig.client_id == client.id,
-                            ClientSmtpConfig.is_deleted == False
+                            ClientSmtpConfig.is_deleted.is_(False)
                         ).first()
 
                         if not smtp_config:

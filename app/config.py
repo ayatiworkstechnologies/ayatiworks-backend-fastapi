@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = Field(default="noreply@example.com", description="From email address")
     SMTP_FROM_NAME: str = "Ayatiworks Tech"
     SMTP_USE_TLS: bool = True
+    FRONTEND_URL: str = "https://admin.ayatiworks.com"
+    ADMIN_URL: str = "https://admin.ayatiworks.com"
+    COMPANY_NAME: str = "Ayatiworks Technologies"
+    COMPANY_WEBSITE: str = "https://ayatiworks.com"
+    COMPANY_ADDRESS: str = ""
+    SUPPORT_EMAIL: str = "support@ayatiworks.com"
+    HR_EMAIL: str = "hr@ayatiworks.com"
 
     @field_validator('DEBUG', mode='before')
     @classmethod
@@ -107,6 +114,10 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
     ALLOWED_EXTENSIONS: list[str] = ["jpg", "jpeg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx"]
+    IMAGEKIT_URL_ENDPOINT: str = "https://ik.imagekit.io/bf5g7wxrp"
+    IMAGEKIT_PRIVATE_KEY: str | None = None
+    IMAGEKIT_PUBLIC_KEY: str | None = None
+    IMAGEKIT_BASE_FOLDER: str = "/ayati-admin"
 
     # Employee ID Configuration
     EMPLOYEE_ID_PREFIX: str = "AW"

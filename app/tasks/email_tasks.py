@@ -110,11 +110,11 @@ def send_notification_email_async(
             if not user:
                 return {"status": "user_not_found"}
 
-            html_content = generic_notification_email(
+            _, html_content = generic_notification_email(
                 name=user.full_name,
                 title=title,
                 message=message,
-                link=link
+                link=link,
             )
 
             success = email_service.send_email(

@@ -26,7 +26,7 @@ class DepartmentService:
         """Get department by ID."""
         return self.db.query(Department).filter(
             Department.id == department_id,
-            Department.is_deleted == False
+            Department.is_deleted.is_(False)
         ).first()
 
     def get_by_code(self, company_id: int, code: str) -> Department | None:
@@ -34,7 +34,7 @@ class DepartmentService:
         return self.db.query(Department).filter(
             Department.company_id == company_id,
             Department.code == code,
-            Department.is_deleted == False
+            Department.is_deleted.is_(False)
         ).first()
 
     def get_all(
@@ -46,7 +46,7 @@ class DepartmentService:
         page_size: int = 20
     ) -> tuple[list[Department], int]:
         """Get all departments with filters."""
-        query = self.db.query(Department).filter(Department.is_deleted == False)
+        query = self.db.query(Department).filter(Department.is_deleted.is_(False))
 
         if company_id:
             query = query.filter(Department.company_id == company_id)
@@ -71,8 +71,8 @@ class DepartmentService:
         """Get department tree (root departments with children)."""
         return self.db.query(Department).filter(
             Department.company_id == company_id,
-            Department.parent_id is None,
-            Department.is_deleted == False
+            Department.parent_id.is_(None),
+            Department.is_deleted.is_(False)
         ).all()
 
     def create(self, data: DepartmentCreate, created_by: int = None) -> Department:
@@ -150,7 +150,7 @@ class DepartmentService:
         """Get number of employees in a department."""
         return self.db.query(Employee).filter(
             Employee.department_id == department_id,
-            Employee.is_deleted == False
+            Employee.is_deleted.is_(False)
         ).count()
 
 
@@ -164,14 +164,14 @@ class DesignationService:
         """Get designation by ID."""
         return self.db.query(Designation).filter(
             Designation.id == designation_id,
-            Designation.is_deleted == False
+            Designation.is_deleted.is_(False)
         ).first()
 
     def get_by_code(self, code: str) -> Designation | None:
         """Get designation by code."""
         return self.db.query(Designation).filter(
             Designation.code == code,
-            Designation.is_deleted == False
+            Designation.is_deleted.is_(False)
         ).first()
 
     def get_all(
@@ -182,7 +182,7 @@ class DesignationService:
         page_size: int = 20
     ) -> tuple[list[Designation], int]:
         """Get all designations with filters."""
-        query = self.db.query(Designation).filter(Designation.is_deleted == False)
+        query = self.db.query(Designation).filter(Designation.is_deleted.is_(False))
 
         if department_id:
             query = query.filter(Designation.department_id == department_id)
@@ -246,6 +246,6 @@ class DesignationService:
         """Get number of employees with a designation."""
         return self.db.query(Employee).filter(
             Employee.designation_id == designation_id,
-            Employee.is_deleted == False
+            Employee.is_deleted.is_(False)
         ).count()
 

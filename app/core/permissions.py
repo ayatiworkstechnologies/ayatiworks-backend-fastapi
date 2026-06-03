@@ -173,6 +173,9 @@ class PermissionCode(str, Enum):
     # Audit
     AUDIT_VIEW = "audit.view"
 
+    # Announcement
+    ANNOUNCEMENT_CREATE = "announcement.create"
+
     # Meta Ads
     META_VIEW = "meta.view"
     META_MANAGE = "meta.manage" # Sync, Edit Config
@@ -353,6 +356,9 @@ def get_all_permissions() -> list[dict]:
 
         # Audit
         {"code": "audit.view", "name": "View Audit Logs", "module": "audit"},
+
+        # Announcement
+        {"code": "announcement.create", "name": "Create Announcements", "module": "announcement"},
 
         # Timesheet
         {"code": "timesheet.view", "name": "View Own Timesheets", "module": "timesheet"},

@@ -5,13 +5,13 @@ Reports and Dashboard API routes.
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import PermissionChecker, get_current_active_user
 from app.database import get_db
 from app.models.attendance import Attendance
-from app.models.auth import User
+from app.models.auth import User, Role
 from app.models.employee import Employee
 from app.models.leave import Leave
 from app.models.project import Project, Task
@@ -121,9 +121,12 @@ async def get_attendance_overview(
         Attendance.work_mode == "wfh"
     ).count()
 
-    total_employees = db.query(Employee).filter(
+    total_employees = db.query(Employee).join(User, Employee.user_id == User.id).outerjoin(
+        Role, User.role_id == Role.id
+    ).filter(
         Employee.is_deleted == False,
-        Employee.is_active == True
+        Employee.is_active == True,
+        or_(Role.code.is_(None), Role.code.notin_(["CLIENT", "SUPER_ADMIN", "ADMIN"]))
     ).count()
 
     return {

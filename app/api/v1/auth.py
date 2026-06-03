@@ -85,12 +85,10 @@ async def forgot_password(
         auth_service = AuthService(db)
         reset_code = auth_service.generate_and_save_otp(user, purpose="reset_password")
 
-        origin = request.headers.get("origin") or "http://localhost:3000"
-        reset_url = f"{origin.rstrip('/')}/reset-password?token={reset_code}"
-
         try:
             from app.services.email_service import email_service
 
+            reset_url = email_service.build_app_url(f"/reset-password?token={reset_code}")
             email_service.send_password_reset_email(
                 to_email=user.email,
                 user_name=user.full_name,

@@ -5,12 +5,19 @@ Security utilities for password hashing and JWT token management.
 import secrets
 import string
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.config import settings
+
+# passlib 1.7.4 expects bcrypt.__about__.__version__, which bcrypt 4.1+
+# removed. Supplying it prevents a noisy trapped warning during login.
+if not hasattr(bcrypt, "__about__"):
+    bcrypt.__about__ = SimpleNamespace(__version__=bcrypt.__version__)
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

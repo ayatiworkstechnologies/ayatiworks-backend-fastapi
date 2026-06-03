@@ -123,8 +123,13 @@ class DesignationListResponse(BaseSchema):
     id: int
     name: str
     code: str
+    description: str | None = None
     level: int
     department_id: int | None = None
+    department_name: str | None = None
+    min_salary: int | None = None
+    max_salary: int | None = None
+    employee_count: int = 0
     is_active: bool
 
 

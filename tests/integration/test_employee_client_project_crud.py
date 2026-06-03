@@ -6,6 +6,7 @@ from datetime import date
 
 import pytest
 
+from app.models.organization import Department, Designation
 from tests.integration.helpers import create_org_setup, ensure_role, get_auth_headers
 
 
@@ -55,6 +56,14 @@ def test_employee_user_list_shows_only_self(client, db, test_user):
     assert payload["total"] == 1
     assert len(payload["items"]) == 1
     assert payload["items"][0]["user_id"] == test_user.id
+
+    code_response = client.get("/api/v1/employees/code/aw001", headers=headers)
+    assert code_response.status_code == 200, code_response.text
+    assert code_response.json()["employee_code"] == "AW0001"
+
+    stats_response = client.get("/api/v1/employees/stats", headers=headers)
+    assert stats_response.status_code == 200, stats_response.text
+    assert stats_response.json()["total"] == 1
 
 
 def test_logout_invalidates_access_token(client, db, test_user):
@@ -146,6 +155,15 @@ def test_employee_crud_flow(client, db, test_user):
     assert get_response.status_code == 200, get_response.text
     assert get_response.json()["employee_code"].startswith("AW")
 
+    short_code = f"aw{int(get_response.json()['employee_code'][2:]):03d}"
+    code_lookup_response = client.get(f"/api/v1/employees/code/{short_code}", headers=headers)
+    assert code_lookup_response.status_code == 200, code_lookup_response.text
+    assert code_lookup_response.json()["id"] == employee_id
+
+    stats_response = client.get("/api/v1/employees/stats", headers=headers)
+    assert stats_response.status_code == 200, stats_response.text
+    assert stats_response.json()["total"] >= 1
+
     code_response = client.get("/api/v1/employees/next-code", headers=headers)
     assert code_response.status_code == 200, code_response.text
     assert code_response.json()["code"].startswith("AW")
@@ -168,6 +186,154 @@ def test_employee_crud_flow(client, db, test_user):
 
     delete_response = client.delete(f"/api/v1/employees/{employee_id}", headers=headers)
     assert delete_response.status_code == 200, delete_response.text
+
+
+def test_employee_list_excludes_client_role_accounts_and_client_codes(client, db, test_user):
+    from app.core.security import hash_password
+    from app.models.auth import User
+    from app.models.employee import Employee
+
+    org = create_org_setup(db, code_suffix="EXC")
+    employee_role = ensure_role(db, code="EMPLOYEE", name="Employee")
+    client_role = ensure_role(db, code="CLIENT", name="Client")
+    headers = get_auth_headers(
+        client,
+        db,
+        test_user,
+        ["employee.view", "employee.view_all"],
+    )
+
+    employee_user = User(
+        email="visible-employee@example.com",
+        password_hash=hash_password("StrongPass123!"),
+        first_name="Visible",
+        last_name="Employee",
+        role_id=employee_role.id,
+        is_active=True,
+        is_verified=True,
+    )
+    client_user = User(
+        email="hidden-client@example.com",
+        password_hash=hash_password("StrongPass123!"),
+        first_name="Hidden",
+        last_name="Client",
+        role_id=client_role.id,
+        is_active=True,
+        is_verified=True,
+    )
+    client_code_user = User(
+        email="hidden-client-code@example.com",
+        password_hash=hash_password("StrongPass123!"),
+        first_name="Hidden",
+        last_name="ClientCode",
+        role_id=employee_role.id,
+        is_active=True,
+        is_verified=True,
+    )
+    db.add_all([employee_user, client_user, client_code_user])
+    db.flush()
+    db.add_all([
+        Employee(
+            user_id=employee_user.id,
+            employee_code="AW0009",
+            company_id=org["company"].id,
+            branch_id=org["branch"].id,
+            department_id=org["department"].id,
+            designation_id=org["designation"].id,
+            joining_date=date(2026, 4, 13),
+            employment_type="full_time",
+            employment_status="active",
+            work_mode="office",
+        ),
+        Employee(
+            user_id=client_user.id,
+            employee_code="AWC001",
+            company_id=org["company"].id,
+            branch_id=org["branch"].id,
+            department_id=org["department"].id,
+            designation_id=org["designation"].id,
+            joining_date=date(2026, 4, 13),
+            employment_type="full_time",
+            employment_status="active",
+            work_mode="office",
+        ),
+        Employee(
+            user_id=client_code_user.id,
+            employee_code="AWC0001",
+            company_id=org["company"].id,
+            branch_id=org["branch"].id,
+            department_id=org["department"].id,
+            designation_id=org["designation"].id,
+            joining_date=date(2026, 4, 13),
+            employment_type="full_time",
+            employment_status="active",
+            work_mode="office",
+        ),
+    ])
+    db.commit()
+
+    response = client.get("/api/v1/employees?page_size=100", headers=headers)
+    assert response.status_code == 200, response.text
+    codes = [item["employee_code"] for item in response.json()["items"]]
+
+    assert "AW0009" in codes
+    assert "AWC001" not in codes
+    assert "AWC0001" not in codes
+
+    search_response = client.get("/api/v1/employees?search=AWC0001&page_size=100", headers=headers)
+    assert search_response.status_code == 200, search_response.text
+    assert search_response.json()["items"] == []
+
+    code_response = client.get("/api/v1/employees/code/AWC0001", headers=headers)
+    assert code_response.status_code == 404, code_response.text
+
+
+def test_employee_create_rejects_designation_from_different_department(client, db, test_user):
+    org = create_org_setup(db, code_suffix="MISD")
+    employee_role = ensure_role(db, code="EMPLOYEE", name="Employee")
+    other_department = Department(
+        company_id=org["company"].id,
+        name="Finance MISD",
+        code="FINMISD",
+        level=0,
+    )
+    db.add(other_department)
+    db.flush()
+    other_designation = Designation(
+        name="Finance Analyst MISD",
+        code="FINANMISD",
+        department_id=other_department.id,
+        level=2,
+    )
+    db.add(other_designation)
+    db.commit()
+
+    headers = get_auth_headers(
+        client,
+        db,
+        test_user,
+        ["employee.create"],
+    )
+
+    response = client.post(
+        "/api/v1/employees",
+        headers=headers,
+        json={
+            "email": "employee-mismatch@example.com",
+            "first_name": "Mismatch",
+            "last_name": "User",
+            "password": "StrongPass123!",
+            "company_id": org["company"].id,
+            "branch_id": org["branch"].id,
+            "department_id": org["department"].id,
+            "designation_id": other_designation.id,
+            "role_id": employee_role.id,
+            "joining_date": "2026-04-13",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    assert "does not belong" in response.json()["detail"]
 
 
 def test_client_crud_flow(client, db, test_user):

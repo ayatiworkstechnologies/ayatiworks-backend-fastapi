@@ -4,6 +4,8 @@ Employee CRUD and management.
 """
 
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -11,7 +13,8 @@ from app.api.deps import PermissionChecker, get_current_active_user, get_user_pe
 from app.core.exceptions import PermissionDeniedError, ResourceNotFoundError
 from app.core.permissions import check_permission
 from app.database import get_db
-from app.models.auth import User
+from app.models.auth import Role, User
+from app.models.employee import Employee
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.employee import (
     EmployeeCreate,
@@ -116,6 +119,8 @@ async def list_employees(
 
         employee = service.get_by_user_id(current_user.id)
         if not employee:
+            return PaginatedResponse.create([], 0, page, page_size)
+        if service.is_client_employee_code(employee.employee_code):
             return PaginatedResponse.create([], 0, page, page_size)
 
         matches_search = not search or any(
@@ -223,6 +228,30 @@ async def get_next_employee_code(
     return {"code": code}
 
 
+@router.get("/stats", response_model=dict)
+async def get_employee_stats(
+    current_user: User = Depends(PermissionChecker("employee.view")),
+    db: Session = Depends(get_db)
+):
+    """Get employee counts for dashboard/list summaries."""
+    service = EmployeeService(db)
+    permissions = get_user_permissions(current_user, db)
+    if not check_permission(permissions, "employee.view_all"):
+        employee = service.get_by_user_id(current_user.id)
+        total = 1 if employee else 0
+        if employee and service.is_client_employee_code(employee.employee_code):
+            total = 0
+        return {
+            "total": total,
+            "active": 1 if total and employee.employment_status == "active" else 0,
+            "inactive": 1 if total and employee.employment_status == "inactive" else 0,
+            "probation": 1 if total and employee.employment_status == "probation" else 0,
+            "terminated": 1 if total and employee.employment_status == "terminated" else 0,
+            "new_this_month": 0,
+        }
+    return service.get_stats()
+
+
 @router.get("/code/{code}", response_model=EmployeeResponse)
 async def get_employee_by_code(
     code: str,
@@ -232,7 +261,7 @@ async def get_employee_by_code(
     """Get employee by employee code (e.g., AW0001)."""
     service = EmployeeService(db)
 
-    employee = service.get_by_code(code.upper())
+    employee = service.get_by_code_flexible(code)
 
     if not employee:
         raise ResourceNotFoundError("Employee", code)
@@ -276,13 +305,24 @@ async def create_employee(
     # Store password before hashing (for email)
     raw_password = data.password
 
+    if data.role_id:
+        selected_role = db.query(Role).filter(
+            Role.id == data.role_id,
+            Role.is_deleted.is_(False),
+        ).first()
+        if selected_role and selected_role.code == "CLIENT":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Client users must be created from the Clients module.",
+            )
+
     try:
         employee = service.create(data, created_by=current_user.id)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from e
 
     # Send welcome email
     try:
@@ -334,7 +374,13 @@ async def update_employee(
     """Update an employee."""
     service = EmployeeService(db)
 
-    employee = service.update(employee_id, data, updated_by=current_user.id)
+    try:
+        employee = service.update(employee_id, data, updated_by=current_user.id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
     if not employee:
         raise ResourceNotFoundError("Employee", employee_id)
@@ -566,12 +612,9 @@ async def bulk_delete_employees(
             detail="No employee IDs provided"
         )
 
-    from datetime import datetime
-    from app.models.employee import Employee
-
     deleted_count = db.query(Employee).filter(
         Employee.id.in_(employee_ids),
-        Employee.is_deleted == False
+        Employee.is_deleted.is_(False)
     ).update(
         {
             Employee.is_deleted: True,
