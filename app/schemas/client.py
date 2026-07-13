@@ -9,7 +9,6 @@ from pydantic import EmailStr, Field, field_validator
 
 from app.schemas.common import BaseSchema, TimestampSchema
 
-
 # ============== Client Schemas (Employee-based) ==============
 
 class ClientCreate(BaseSchema):

@@ -9,6 +9,7 @@ Implements the real Meta Platforms Graph API flow:
   Step E: Fetch leads from each lead form
 """
 
+import contextlib
 import logging
 from datetime import datetime
 
@@ -228,17 +229,13 @@ class MetaGraphService:
             # Parse budget (Meta returns in cents)
             daily_budget = None
             if c.get("daily_budget"):
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     daily_budget = float(c["daily_budget"]) / 100
-                except (ValueError, TypeError):
-                    pass
 
             lifetime_budget = None
             if c.get("lifetime_budget"):
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     lifetime_budget = float(c["lifetime_budget"]) / 100
-                except (ValueError, TypeError):
-                    pass
 
             start_time = _parse_meta_datetime(c.get("start_time"))
             stop_time = _parse_meta_datetime(c.get("stop_time"))

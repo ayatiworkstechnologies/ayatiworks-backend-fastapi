@@ -8,7 +8,7 @@ from app.core.security import hash_password
 from app.models.auth import User
 from app.models.employee import Employee
 from app.models.organization import Department, Designation
-from app.models.team import Team, TeamMember
+from app.models.team import Team
 from app.services.organization_service import DepartmentService
 from app.services.team_service import TeamService
 from tests.integration.helpers import create_org_setup, ensure_role, get_auth_headers

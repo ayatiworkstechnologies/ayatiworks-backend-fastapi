@@ -4,13 +4,13 @@ Dynamic modules, SMTP config, and mail templates per client.
 """
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     ForeignKey,
     Integer,
     String,
     Text,
-    JSON,
 )
 from sqlalchemy.orm import relationship
 

@@ -6,7 +6,6 @@ from pydantic import EmailStr, Field
 
 from app.schemas.common import BaseSchema, TimestampSchema
 
-
 # ============== SMTP Config Schemas ==============
 
 class ClientSmtpConfigCreate(BaseSchema):

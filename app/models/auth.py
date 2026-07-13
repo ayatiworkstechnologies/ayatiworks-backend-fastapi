@@ -107,9 +107,7 @@ class User(BaseModel, AuditMixin):
 
     def is_locked(self) -> bool:
         """Check if user account is locked."""
-        if self.locked_until and self.locked_until > datetime.utcnow():
-            return True
-        return False
+        return bool(self.locked_until and self.locked_until > datetime.utcnow())
 
     @property
     def employee_id(self) -> int | None:

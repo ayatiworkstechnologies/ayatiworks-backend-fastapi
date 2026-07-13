@@ -96,11 +96,7 @@ def get_disabled_features(
         # Check if this flag applies to the given scope
         applies = False
 
-        if flag.scope == "global":
-            applies = True
-        elif flag.scope == "company" and flag.target_id == company_id:
-            applies = True
-        elif flag.scope == "role" and flag.target_id == role_id:
+        if flag.scope == "global" or flag.scope == "company" and flag.target_id == company_id or flag.scope == "role" and flag.target_id == role_id:
             applies = True
 
         if applies:

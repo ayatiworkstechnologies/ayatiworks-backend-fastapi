@@ -2,21 +2,21 @@
 Test fixtures and configuration.
 """
 
-import pytest
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
-from app.main import app
-from app.database import Base, get_db
-from app.models.auth import User, Role
 from app.core.security import hash_password
+from app.database import Base, get_db
+from app.main import app
+from app.models.auth import Role, User
 from app.services.auth_service import AuthService
-
 
 # Test database URL (SQLite for speed)
 # Use the OS temp directory to avoid filesystem I/O issues in certain workspaces.
@@ -24,7 +24,7 @@ TEST_DB_PATH = Path(tempfile.gettempdir()) / f"ayatiworks_tech_test_{uuid4().hex
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 
 engine = create_engine(
-    TEST_DATABASE_URL, 
+    TEST_DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

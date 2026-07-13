@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import PermissionChecker, get_current_active_user
 from app.database import get_db
 from app.models.attendance import Attendance
-from app.models.auth import User, Role
+from app.models.auth import Role, User
 from app.models.employee import Employee
 from app.models.leave import Leave
 from app.models.project import Project, Task

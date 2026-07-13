@@ -1,13 +1,13 @@
 from fastapi import APIRouter
 
 from .attendance import router as attendance_router
+from .bots import router as bots_router
 from .clients import router as clients_router
 from .employees import router as employees_router
 from .invoices import router as invoices_router
 from .leaves import router as leaves_router
 from .notifications import router as notifications_router
 from .organizations import router as organizations_router
-from .bots import router as bots_router
 from .permissions import router as permissions_router
 from .projects import router as projects_router
 from .public import router as public_router

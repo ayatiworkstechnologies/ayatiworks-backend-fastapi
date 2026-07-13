@@ -10,7 +10,6 @@ import re
 
 from app.main import app
 
-
 ALLOWED_STATUS_CODES = {
     200,
     201,

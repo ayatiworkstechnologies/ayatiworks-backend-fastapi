@@ -4,8 +4,8 @@ Regression coverage for role and permission CRUD API behavior.
 
 from uuid import uuid4
 
-from app.core.security import hash_password
 from app.api.deps import get_user_permissions
+from app.core.security import hash_password
 from app.models.auth import Permission, Role, RolePermission, User
 from app.services.auth_service import AuthService
 from tests.integration.helpers import ensure_role

@@ -193,11 +193,10 @@ async def create_project(
         try:
             emp_service = EmployeeService(db)
             manager = emp_service.get_by_id(project.manager_id)
-            if manager and manager.user_id:
+            if manager and manager.user_id and manager.user:
                 # Need to fetch user to get email, get_by_id might join user, let's verify or fetch user
                 # Employee model usually has user relationship
-                if manager.user:
-                    email_service.send_project_created_email(
+                email_service.send_project_created_email(
                         to_email=manager.user.email,
                         manager_name=f"{manager.user.first_name} {manager.user.last_name or ''}",
                         project_data={

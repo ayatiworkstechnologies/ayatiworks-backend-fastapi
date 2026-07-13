@@ -39,11 +39,7 @@ async def list_leads(
         client = db.query(Client).filter(Client.user_id == current_user.id).first()
         if not client and current_user.email:
             client = db.query(Client).filter(Client.email == current_user.email).first()
-        if client:
-            query = query.filter(Lead.client_id == client.id)
-        else:
-            # If no client found for this user, return nothing
-            query = query.filter(Lead.id == -1)
+        # If no client found for this user, return nothing.`r`n        query = query.filter(Lead.client_id == client.id) if client else query.filter(Lead.id == -1)
 
     if status:
         query = query.filter(Lead.status == status)

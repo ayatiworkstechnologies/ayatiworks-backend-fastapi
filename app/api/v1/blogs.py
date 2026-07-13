@@ -106,10 +106,9 @@ async def get_blog(
         # If not an integer, treat as slug
         blog = service.get_blog_by_slug(id_or_slug, only_published=False)
 
-    if not blog:
+    if not blog and id_or_slug.isdigit():
         # Fallback: if ID lookup failed (e.g. ID not found), try as slug just in case
-        if id_or_slug.isdigit():
-             blog = service.get_blog_by_slug(id_or_slug, only_published=False)
+        blog = service.get_blog_by_slug(id_or_slug, only_published=False)
 
     if not blog:
         raise HTTPException(

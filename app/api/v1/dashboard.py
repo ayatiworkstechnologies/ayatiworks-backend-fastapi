@@ -6,23 +6,22 @@ Provides role-based dashboard statistics and data.
 from datetime import datetime, timedelta
 from typing import Any
 
+from alembic import command
+from alembic.config import Config
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user
 from app.database import get_db
-
-from alembic import command
-from alembic.config import Config
 from app.models.attendance import Attendance
-from app.models.auth import User, Role
-from app.models.client import Client, Lead
+from app.models.auth import User
+from app.models.client import Client
 from app.models.company import Company
 from app.models.employee import Employee
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.leave import Leave, LeaveBalance
-from app.models.meta import MetaCampaign, MetaLead
+from app.models.meta import MetaLead
 from app.models.organization import Department
 from app.models.project import Project, ProjectMember, Task, TaskStatus
 
@@ -83,6 +82,7 @@ def get_my_portal(
     Returns profile data + computed stats (modules, projects, tasks, invoices).
     """
     from fastapi import HTTPException
+
     from app.models.client_module import ClientModule
 
     client = _find_client_for_user(db, current_user)
@@ -170,7 +170,7 @@ def get_project_overview(
         Project.status, func.count(Project.id)
     ).filter(*base_filter).group_by(Project.status).all()
 
-    status_counts = {status: count for status, count in status_rows}
+    status_counts = dict(status_rows)
     total = sum(status_counts.values())
 
     return {
@@ -625,7 +625,7 @@ def get_dashboard_charts(
 
         project_dist = project_query.group_by(Project.status).all()
         charts["project_distribution"] = [
-            {"name": status.replace("_", " ").title(), "value": count} 
+            {"name": status.replace("_", " ").title(), "value": count}
             for status, count in project_dist
         ]
 
@@ -834,7 +834,7 @@ def run_db_migration(
                  os.chdir(parent)
              else:
                  return {
-                     "status": "error", 
+                     "status": "error",
                      "message": f"alembic.ini not found in {cwd} or parent. Files in {cwd}: {os.listdir(cwd)}"
                  }
 

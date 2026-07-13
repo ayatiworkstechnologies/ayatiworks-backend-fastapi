@@ -10,7 +10,6 @@ from pydantic import Field, field_validator
 
 from app.schemas.common import BaseSchema, TimestampSchema
 
-
 # ============ Salary Structure ============
 
 class SalaryStructureCreate(BaseSchema):

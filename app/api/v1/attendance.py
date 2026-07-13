@@ -4,7 +4,6 @@ Check-in, check-out, and attendance management.
 """
 
 from datetime import date
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
@@ -116,7 +115,7 @@ async def check_out(
     return AttendanceResponse.model_validate(attendance)
 
 
-@router.get("/today", response_model=Optional[AttendanceResponse])
+@router.get("/today", response_model=AttendanceResponse | None)
 async def get_today_attendance(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

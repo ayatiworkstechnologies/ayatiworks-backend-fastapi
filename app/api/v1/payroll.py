@@ -5,6 +5,7 @@ Salary structures, payslip generation, and payroll management.
 """
 
 import calendar
+import contextlib
 import logging
 from datetime import date
 
@@ -16,7 +17,7 @@ from app.api.deps import PermissionChecker
 from app.database import get_db
 from app.models.auth import User
 from app.models.employee import Employee
-from app.models.payroll import PaySlip, PayrollStatus, SalaryStructure
+from app.models.payroll import PayrollStatus, PaySlip, SalaryStructure
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.payroll import (
     PayrollGenerateRequest,
@@ -44,10 +45,8 @@ def _calc_totals(struct: SalaryStructure) -> None:
     # Add custom allowances
     if struct.other_allowances and isinstance(struct.other_allowances, dict):
         for v in struct.other_allowances.values():
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 gross += float(v)
-            except (ValueError, TypeError):
-                pass
 
     total_employee_deductions = float(struct.pf_employee or 0) + float(struct.esi_employee or 0) + \
                                 float(struct.professional_tax or 0) + float(struct.tds or 0)
@@ -55,10 +54,8 @@ def _calc_totals(struct: SalaryStructure) -> None:
     # Add custom deductions
     if struct.other_deductions and isinstance(struct.other_deductions, dict):
         for v in struct.other_deductions.values():
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 total_employee_deductions += float(v)
-            except (ValueError, TypeError):
-                pass
 
     net = gross - total_employee_deductions
     ctc = gross + float(struct.pf_employer or 0) + float(struct.esi_employer or 0)

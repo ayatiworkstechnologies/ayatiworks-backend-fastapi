@@ -18,6 +18,8 @@ try:
 except ImportError:
     REDIS_AVAILABLE = False
 
+import contextlib
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -148,10 +150,8 @@ class CacheService:
     def delete(self, key: str) -> bool:
         """Delete key from cache."""
         if self.is_connected:
-            try:
+            with contextlib.suppress(Exception):
                 self._client.delete(key)
-            except Exception:
-                pass
         return self._memory_cache.delete(key)
 
     def delete_pattern(self, pattern: str) -> int:
@@ -170,10 +170,8 @@ class CacheService:
     def clear_all(self) -> bool:
         """Clear all cache (use with caution)."""
         if self.is_connected:
-            try:
+            with contextlib.suppress(Exception):
                 self._client.flushdb()
-            except Exception:
-                pass
         return self._memory_cache.clear_all()
 
 
@@ -187,7 +185,7 @@ cache_service.connect()
 def cache_key(*args, **kwargs) -> str:
     """Generate cache key from arguments."""
     key_data = f"{args}:{kwargs}"
-    return hashlib.md5(key_data.encode()).hexdigest()
+    return hashlib.sha256(key_data.encode()).hexdigest()
 
 
 def cached(

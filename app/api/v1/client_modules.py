@@ -12,7 +12,6 @@ Optimised:
 - all imports moved to top-level
 """
 
-import asyncio
 import csv
 import io
 import json
@@ -20,8 +19,7 @@ import logging
 import re
 import secrets
 import ssl
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -308,7 +306,7 @@ async def test_smtp_config(
 
     except aiosmtplib.SMTPAuthenticationError:
         raise HTTPException(status_code=400, detail="Authentication failed. Check username and password.")
-    except (aiosmtplib.SMTPConnectError, OSError, asyncio.TimeoutError):
+    except (TimeoutError, aiosmtplib.SMTPConnectError, OSError):
         raise HTTPException(status_code=400, detail="Could not connect to the server. Check host and port.")
     except Exception as e:
         logger.error(f"SMTP Test Error for client {client_id}: {e}")
@@ -580,7 +578,7 @@ async def _send_email_logic(
         if not use_tls_on_connect and smtp_config.use_tls:
             await smtp.starttls(tls_context=context)
         await smtp.login(smtp_config.username, smtp_config.password)
-        
+
         await smtp.send_message(message, recipients=recipients)
         await smtp.quit()
 
@@ -605,7 +603,7 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
         ClientMailTemplate.id == module.mail_template_id,
         ClientMailTemplate.is_deleted == False,
     ).first()
-    
+
     if not template:
         logger.warning(f"Module {module.id} references missing template {module.mail_template_id}")
         return False
@@ -625,14 +623,14 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
             if key.lower() in ['email', 'to_email', 'contact_email', 'mail']:
                 recipient_email = value
                 break
-    
+
     if not recipient_email:
         # Fallback: check schema for field of type 'email'
         for field in (module.fields or []):
             if field.get("type") == "email" and field.get("name") in record_data:
                 recipient_email = record_data[field["name"]]
                 break
-    
+
     if not recipient_email:
         logger.warning(f"Module {module.id} template {template.id} has no To Email and no email found in record")
         return False
@@ -646,7 +644,7 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
         attachments_html = _build_file_image_html(module.fields or [], record_data)
         if attachments_html:
             html_body += attachments_html
-        
+
         # Send non-blocking (fire and forget from client perspective, but we await here for reliability)
         await _send_email_logic(client_id, recipient_email, subject, html_body, db)
         return True
@@ -658,16 +656,16 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
 def _build_file_image_html(fields: list, record_data: dict) -> str:
     """Build HTML section for file/image fields to append to email body."""
     parts = []
-    
+
     for field in fields:
         field_type = field.get("type", "")
         field_name = field.get("name", "")
         field_label = field.get("label", field_name)
         value = record_data.get(field_name)
-        
+
         if not value or field_type not in ("file", "image"):
             continue
-        
+
         if field_type == "image":
             parts.append(
                 f'<div style="margin:12px 0;">'
@@ -685,10 +683,10 @@ def _build_file_image_html(fields: list, record_data: dict) -> str:
                 f'📎 Download {filename}</a>'
                 f'</div>'
             )
-    
+
     if not parts:
         return ""
-    
+
     return (
         '<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">'
         '<h3 style="font-size:16px;color:#1f2937;margin:0 0 12px 0;">📎 Attachments</h3>'
@@ -737,7 +735,7 @@ async def list_modules(
             ClientModuleRecord.module_id.in_(module_ids),
             ClientModuleRecord.is_deleted == False,
         ).group_by(ClientModuleRecord.module_id).all()
-        record_counts = {mid: cnt for mid, cnt in counts}
+        record_counts = dict(counts)
 
     items = [
         ClientModuleListResponse(
@@ -919,7 +917,7 @@ async def delete_module(
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     module.soft_delete(current_user.id)
     db.query(ClientModuleRecord).filter(
         ClientModuleRecord.module_id == module_id,
@@ -1058,7 +1056,7 @@ async def export_module_records(
 
     elif format == "excel":
         from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
         wb = Workbook()
         ws = wb.active
@@ -1110,7 +1108,7 @@ async def export_module_records(
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.units import mm
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         output = io.BytesIO()
         doc = SimpleDocTemplate(output, pagesize=landscape(A4), topMargin=15*mm, bottomMargin=15*mm)
