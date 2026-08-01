@@ -177,9 +177,18 @@ class ClientModuleRecordUpdate(BaseSchema):
     data: dict = Field(..., min_length=1)
 
 
+class ClientRecordFlagUpdate(BaseSchema):
+    """Update the requesting user's personal read/important markers on a record."""
+    is_important: bool | None = None
+    is_read: bool | None = None
+
+
 class ClientModuleRecordResponse(TimestampSchema):
     """Record response."""
     id: int
     module_id: int
     data: dict = {}
     email_sent: bool = False
+    # Personal to the requesting user (e.g. a client portal user); not shared across users
+    is_important: bool = False
+    is_read: bool = False

@@ -191,6 +191,7 @@ class PermissionCode(str, Enum):
     MODULE_CREATE = "module.create"
     MODULE_EDIT = "module.edit"
     MODULE_DELETE = "module.delete"
+    MODULE_RECORD_CREATE = "module.record.create"
 
     # Client Mail
     MAIL_VIEW = "mail.view"
@@ -381,6 +382,7 @@ def get_all_permissions() -> list[dict]:
         {"code": "module.create", "name": "Create Client Modules", "module": "module"},
         {"code": "module.edit", "name": "Edit Client Modules", "module": "module"},
         {"code": "module.delete", "name": "Delete Client Modules", "module": "module"},
+        {"code": "module.record.create", "name": "Add Records to Client Modules", "module": "module"},
 
         # Client Mail
         {"code": "mail.view", "name": "View Client Mails", "module": "mail"},

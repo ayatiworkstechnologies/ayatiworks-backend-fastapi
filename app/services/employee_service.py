@@ -24,10 +24,13 @@ class EmployeeService:
     def __init__(self, db: Session):
         self.db = db
 
-    def generate_employee_code(self, prefix: str = None) -> str:
+    def generate_employee_code(self, prefix: str = None, skip: int = 0) -> str:
         """
         Generate next employee code in format AW0001, AW0002, etc.
         For clients, pass prefix='AWC' to generate AWC001, AWC002, etc.
+        `skip` bumps the number past `skip` additional collisions seen in the
+        same request (used by retry loops so repeated calls don't return the
+        same code while the prior attempt's row hasn't been committed yet).
         """
         if prefix is None:
             prefix = settings.EMPLOYEE_ID_PREFIX
@@ -46,7 +49,7 @@ class EmployeeService:
                 continue
             max_num = max(max_num, int(match.group(1)))
 
-        num = max_num + 1
+        num = max_num + 1 + skip
 
         # Format with leading zeros
         return f"{prefix}{num:0{length}d}"
@@ -281,7 +284,7 @@ class EmployeeService:
                 if employee_data.employee_code:
                     employee_code = employee_data.employee_code
                 else:
-                    employee_code = self.generate_employee_code()
+                    employee_code = self.generate_employee_code(skip=attempt)
 
                 # Create employee with normalized FK values
                 employee = Employee(

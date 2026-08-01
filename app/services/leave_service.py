@@ -196,6 +196,17 @@ class LeaveService:
             elif old_status == "approved":
                 balance.used -= leave.days
 
+        if old_status == "approved":
+            from app.models.attendance import Attendance
+
+            self.db.query(Attendance).filter(
+                Attendance.employee_id == leave.employee_id,
+                Attendance.date >= leave.from_date,
+                Attendance.date <= leave.to_date,
+                Attendance.work_mode == "leave",
+                Attendance.is_deleted.is_(False),
+            ).update({"is_deleted": True}, synchronize_session=False)
+
         self.db.commit()
         self.db.refresh(leave)
 
@@ -270,7 +281,7 @@ class HolidayService:
 
         if company_id:
             query = query.filter(
-                (Holiday.company_id == company_id) | (Holiday.company_id is None)
+                (Holiday.company_id == company_id) | Holiday.company_id.is_(None)
             )
 
         if year:
@@ -292,7 +303,7 @@ class HolidayService:
 
         if company_id:
             query = query.filter(
-                (Holiday.company_id == company_id) | (Holiday.company_id is None)
+                (Holiday.company_id == company_id) | Holiday.company_id.is_(None)
             )
 
         return query.order_by(Holiday.date).limit(limit).all()

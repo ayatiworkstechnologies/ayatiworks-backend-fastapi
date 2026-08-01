@@ -4,8 +4,6 @@ Login, logout, refresh token, 2FA.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user, get_current_user
@@ -25,6 +23,7 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     OTPRequest,
+    PublicUserCreate,
     RefreshTokenRequest,
     ResetPasswordRequest,
     RoleListResponse,
@@ -34,16 +33,14 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.auth_service import AuthService
-
-# Rate limiter for auth endpoints
-limiter = Limiter(key_func=get_remote_address)
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
-    data: UserCreate,
+    data: PublicUserCreate,
     db: Session = Depends(get_db)
 ):
     """
@@ -70,6 +67,7 @@ async def register(
 
 
 @router.post("/forgot-password")
+@limiter.limit("5/minute")
 async def forgot_password(
     request: Request,
     data: ResetPasswordRequest,
@@ -185,7 +183,7 @@ async def login(
 
         raise AuthenticationError(
             message="2FA required. OTP sent to email.",
-            status_code=status.HTTP_202_ACCEPTED,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             error_code="2FA_REQUIRED"
         )
 

@@ -16,8 +16,9 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.exceptions import AccountLockedError
 from app.models.auth import OTPCode, RolePermission, User, UserSession
-from app.schemas.auth import UserCreate
+from app.schemas.auth import PublicUserCreate, UserCreate
 
 
 class AuthService:
@@ -43,7 +44,8 @@ class AuthService:
 
         # Check if account is locked
         if user.is_locked():
-            return None
+            lockout_minutes = max(1, int((user.locked_until - datetime.utcnow()).total_seconds() // 60) + 1)
+            raise AccountLockedError(lockout_minutes=lockout_minutes)
 
         # Verify password
         if not verify_password(password, user.password_hash):
@@ -244,7 +246,7 @@ class AuthService:
 
         return False
 
-    def register_user(self, user_data: UserCreate) -> User:
+    def register_user(self, user_data: UserCreate | PublicUserCreate) -> User:
         """Register a new user."""
         user = User(
             email=user_data.email,
@@ -252,9 +254,9 @@ class AuthService:
             first_name=user_data.first_name,
             last_name=user_data.last_name,
             phone=user_data.phone,
-            role_id=user_data.role_id,
-            company_id=user_data.company_id,
-            branch_id=user_data.branch_id
+            role_id=getattr(user_data, "role_id", None),
+            company_id=getattr(user_data, "company_id", None),
+            branch_id=getattr(user_data, "branch_id", None)
         )
 
         self.db.add(user)

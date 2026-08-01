@@ -7,10 +7,12 @@ from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -112,3 +114,26 @@ class ClientModuleRecord(BaseModel, AuditMixin):
 
     # Relationships
     module = relationship("ClientModule", back_populates="records")
+
+
+class ClientRecordFlag(BaseModel, AuditMixin):
+    """
+    Per-user read/important markers on a module record.
+    Personal to the viewing user (e.g. a client portal user) — not shared
+    with admins viewing the same record.
+    """
+
+    __tablename__ = "client_record_flags"
+    __table_args__ = (
+        UniqueConstraint("record_id", "user_id", name="uq_client_record_flags_record_user"),
+    )
+
+    record_id = Column(Integer, ForeignKey("client_module_records.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    is_important = Column(Boolean, nullable=False, default=False)
+    is_read = Column(Boolean, nullable=False, default=False)
+    read_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    record = relationship("ClientModuleRecord", backref="flags")

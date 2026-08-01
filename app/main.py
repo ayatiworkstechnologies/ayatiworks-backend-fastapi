@@ -15,9 +15,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -29,6 +28,7 @@ except ImportError:
 
 from app.api.v1.router import router as api_v1_router
 from app.config import settings
+from app.core.rate_limit import limiter
 from app.database import init_db
 
 # Configure structured logging
@@ -39,10 +39,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app")
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
-
-
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
 
@@ -52,7 +48,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
         # HSTS - only in production
@@ -163,7 +158,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=(None if _is_production else r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

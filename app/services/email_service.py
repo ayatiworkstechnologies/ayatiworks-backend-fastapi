@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.config import settings
+from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,8 @@ class EmailService:
             autoescape=select_autoescape(['html', 'xml'])
         )
 
-        # Default template context
+        # Default template context (branding fields are resolved dynamically per-email
+        # from the primary Company record; these are only the static fallbacks)
         self.default_context = {
             'company_name': settings.COMPANY_NAME,
             'company_address': settings.COMPANY_ADDRESS,
@@ -53,6 +55,42 @@ class EmailService:
             'login_url': self.build_app_url('/login'),
             'dashboard_url': self.build_app_url('/dashboard'),
         }
+
+    def _get_branding(self) -> dict[str, str]:
+        """
+        Resolve current company branding (name, website, from-name) from the
+        primary Company record so email content stays in sync with whatever
+        is set in Settings > Companies, without requiring a server restart.
+        Falls back to static .env values if no company exists or the query fails.
+        """
+        branding = {
+            'company_name': settings.COMPANY_NAME,
+            'company_website': settings.COMPANY_WEBSITE,
+            'from_name': self.from_name,
+        }
+
+        db = SessionLocal()
+        try:
+            from app.models.company import Company
+
+            company = (
+                db.query(Company)
+                .filter(Company.deleted_at.is_(None))
+                .order_by(Company.id.asc())
+                .first()
+            )
+            if company:
+                if company.name:
+                    branding['company_name'] = company.name
+                    branding['from_name'] = company.name
+                if company.website:
+                    branding['company_website'] = company.website
+        except Exception as e:
+            logger.warning(f"Falling back to static company branding: {e}")
+        finally:
+            db.close()
+
+        return branding
 
     @staticmethod
     def _normalize_base_url(url: str) -> str:
@@ -96,8 +134,15 @@ class EmailService:
         Returns:
             Rendered HTML string
         """
-        # Merge with default context
-        full_context = {**self.default_context, **context}
+        # Merge with default context; live company branding overrides static fallbacks,
+        # explicit per-call context (e.g. recipient data) takes final precedence.
+        branding = self._get_branding()
+        full_context = {
+            **self.default_context,
+            'company_name': branding['company_name'],
+            'company_website': branding['company_website'],
+            **context,
+        }
 
         template = self.jinja_env.get_template(template_name)
         return template.render(**full_context)
@@ -109,7 +154,8 @@ class EmailService:
         html_content: str,
         plain_content: str | None = None,
         cc: list[str] | None = None,
-        bcc: list[str] | None = None
+        bcc: list[str] | None = None,
+        from_name: str | None = None,
     ) -> bool:
         """
         Send an email.
@@ -119,6 +165,8 @@ class EmailService:
             subject: Email subject
             html_content: HTML content of the email
             plain_content: Plain text fallback (optional)
+            from_name: Override display name in the "From" header (e.g. a specific
+                client's name). Falls back to live company branding if not given.
             cc: List of CC addresses (optional)
             bcc: List of BCC addresses (optional)
 
@@ -126,9 +174,11 @@ class EmailService:
             True if email sent successfully, False otherwise
         """
         try:
+            resolved_from_name = from_name or self._get_branding()['from_name']
+
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"] = f"{self.from_name} <{self.from_email}>"
+            msg["From"] = f"{resolved_from_name} <{self.from_email}>"
             msg["To"] = to_email
 
             if cc:
@@ -218,7 +268,7 @@ class EmailService:
 
         return self.send_templated_email(
             to_email=to_email,
-            subject=f"Welcome to {self.default_context['company_name']}!",
+            subject=f"Welcome to {self._get_branding()['company_name']}!",
             template_name='email/welcome.html',
             context=context
         )
@@ -384,7 +434,7 @@ class EmailService:
 
             self.send_templated_email(
                 to_email=contact_data.get('email'),
-                subject=f"We received your message - {self.default_context['company_name']}",
+                subject=f"We received your message - {self._get_branding()['company_name']}",
                 template_name='email/contact_acknowledgement.html',
                 context=user_context
             )
@@ -546,7 +596,7 @@ def employee_welcome_email(
         'temp_password': password,
     }
 
-    subject = f"Welcome to {email_service.default_context['company_name']}!"
+    subject = f"Welcome to {email_service._get_branding()['company_name']}!"
     html_content = email_service.render_template('email/welcome.html', context)
 
     return subject, html_content

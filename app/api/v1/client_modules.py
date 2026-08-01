@@ -24,7 +24,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import aiosmtplib
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from jinja2 import BaseLoader, Environment
 from sqlalchemy import func, inspect, text
@@ -38,6 +38,7 @@ from app.models.client_module import (
     ClientMailTemplate,
     ClientModule,
     ClientModuleRecord,
+    ClientRecordFlag,
     ClientSmtpConfig,
 )
 from app.schemas.client_module import (
@@ -50,6 +51,7 @@ from app.schemas.client_module import (
     ClientModuleRecordCreate,
     ClientModuleRecordResponse,
     ClientModuleRecordUpdate,
+    ClientRecordFlagUpdate,
     ClientModuleResponse,
     ClientModuleUpdate,
     ClientSendEmailRequest,
@@ -76,6 +78,25 @@ def _get_client_or_404(client_id: int, db: Session) -> Client:
     ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+    return client
+
+
+def _get_own_client_or_403(client_id: int, db: Session, current_user: User) -> Client:
+    """
+    Get client by ID, but for CLIENT-role users, only if it's their own
+    linked CRM profile. Prevents one client from reading another client's
+    modules/records by changing the client_id in the URL.
+    """
+    client = _get_client_or_404(client_id, db)
+
+    role_code = (current_user.role.code if current_user.role else "").upper()
+    if role_code == "CLIENT":
+        owns_record = client.user_id == current_user.id or (
+            current_user.email and client.email == current_user.email
+        )
+        if not owns_record:
+            raise HTTPException(status_code=403, detail="Not authorized to access this client's data")
+
     return client
 
 
@@ -139,7 +160,11 @@ def _build_module_response(module: ClientModule, record_count: int = 0) -> Clien
     )
 
 
-def _build_record_response(record: ClientModuleRecord, email_sent: bool = False) -> ClientModuleRecordResponse:
+def _build_record_response(
+    record: ClientModuleRecord,
+    email_sent: bool = False,
+    flag: ClientRecordFlag | None = None,
+) -> ClientModuleRecordResponse:
     """Build ClientModuleRecordResponse from model."""
     return ClientModuleRecordResponse(
         id=record.id,
@@ -148,6 +173,8 @@ def _build_record_response(record: ClientModuleRecord, email_sent: bool = False)
         email_sent=email_sent,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        is_important=bool(flag.is_important) if flag else False,
+        is_read=bool(flag.is_read) if flag else False,
     )
 
 
@@ -171,7 +198,7 @@ def _get_table_columns(db: Session, table_name: str) -> set[str]:
     return {column["name"] for column in inspect(db.get_bind()).get_columns(table_name)}
 
 
-def _legacy_safe_record_response(row) -> ClientModuleRecordResponse:
+def _legacy_safe_record_response(row, flag: ClientRecordFlag | None = None) -> ClientModuleRecordResponse:
     """Build a record response from a raw row that may not contain every model column."""
     mapping = row._mapping
     return ClientModuleRecordResponse(
@@ -181,6 +208,8 @@ def _legacy_safe_record_response(row) -> ClientModuleRecordResponse:
         email_sent=False,
         created_at=mapping.get("created_at"),
         updated_at=mapping.get("updated_at"),
+        is_important=bool(flag.is_important) if flag else False,
+        is_read=bool(flag.is_read) if flag else False,
     )
 
 
@@ -457,6 +486,30 @@ def _render_jinja(template_str: str, variables: dict) -> str:
         raise HTTPException(status_code=400, detail=f"Template rendering error: {str(e)}")
 
 
+def _build_mail_template_context(
+    variables: dict | None = None,
+    *,
+    client: Client | None = None,
+    module: ClientModule | None = None,
+    template: ClientMailTemplate | None = None,
+) -> dict:
+    """Add stable built-in values to user-provided mail-template variables."""
+    context = dict(variables or {})
+    if client:
+        context.setdefault("client_name", client.name)
+        context.setdefault("company_name", client.company_name or client.name)
+        context.setdefault("client_slug", client.slug or "")
+    if module:
+        context.setdefault("module_name", module.name)
+        context.setdefault("module_slug", module.slug)
+    if template:
+        context.setdefault("template_name", template.name)
+
+    # `data.field_name` is useful when a field name overlaps a built-in value.
+    context.setdefault("data", dict(variables or {}))
+    return context
+
+
 @router.post("/clients/{client_id}/send-email", response_model=MessageResponse)
 async def send_client_email(
     client_id: int,
@@ -465,7 +518,7 @@ async def send_client_email(
     db: Session = Depends(get_db),
 ):
     """Send email using client's SMTP config and optional template."""
-    _get_client_or_404(client_id, db)
+    client = _get_client_or_404(client_id, db)
 
     smtp_config = db.query(ClientSmtpConfig).filter(
         ClientSmtpConfig.client_id == client_id,
@@ -474,6 +527,7 @@ async def send_client_email(
 
     subject = data.subject
     html_body = data.html_body
+    tmpl = None
 
     if data.template_id:
         tmpl = db.query(ClientMailTemplate).filter(
@@ -489,9 +543,13 @@ async def send_client_email(
     if not subject or not html_body:
         raise HTTPException(status_code=400, detail="Subject and body are required")
 
-    if data.variables:
-        subject = _render_jinja(subject, data.variables)
-        html_body = _render_jinja(html_body, data.variables)
+    render_context = _build_mail_template_context(
+        data.variables,
+        client=client,
+        template=tmpl,
+    )
+    subject = _render_jinja(subject, render_context).strip()
+    html_body = _render_jinja(html_body, render_context)
 
     await _send_email_logic(client_id, data.to_email, subject, html_body, db, smtp_config, data.cc, data.bcc)
     return MessageResponse(message=f"Email sent successfully to {data.to_email}")
@@ -515,6 +573,12 @@ async def _send_email_logic(
             ClientSmtpConfig.is_deleted == False,
         ).first()
 
+    # This client's own name/company — used as the "From" display name so
+    # emails sent on their behalf are branded per-client, not with the
+    # global system company name.
+    client = db.query(Client).filter(Client.id == client_id).first()
+    client_display_name = (client.company_name or client.name) if client else None
+
     # ---- Use System SMTP if no client config ----
     if not smtp_config:
         try:
@@ -524,6 +588,7 @@ async def _send_email_logic(
                 html_content=html_body,
                 cc=cc,
                 bcc=bcc,
+                from_name=client_display_name,
             )
             if not success:
                 raise Exception("System email service returned failure")
@@ -543,9 +608,10 @@ async def _send_email_logic(
         except Exception:
             wrapped_body = html_body
 
+        display_name = smtp_config.from_name or client_display_name
         from_display = (
-            f"{smtp_config.from_name} <{smtp_config.from_email}>"
-            if smtp_config.from_name
+            f"{display_name} <{smtp_config.from_email}>"
+            if display_name
             else smtp_config.from_email
         )
 
@@ -635,10 +701,17 @@ async def _trigger_module_email(client_id: int, module: ClientModule, record_dat
         logger.warning(f"Module {module.id} template {template.id} has no To Email and no email found in record")
         return False
 
-    # Render template with record data
+    # Render the subject and body from the same complete context.
     try:
-        subject = _render_jinja(template.subject, record_data)
-        html_body = _render_jinja(template.html_body, record_data)
+        client = module.client or _get_client_or_404(client_id, db)
+        render_context = _build_mail_template_context(
+            record_data,
+            client=client,
+            module=module,
+            template=template,
+        )
+        subject = _render_jinja(template.subject, render_context).strip()
+        html_body = _render_jinja(template.html_body, render_context)
 
         # Auto-render file/image fields as HTML in email body
         attachments_html = _build_file_image_html(module.fields or [], record_data)
@@ -710,7 +783,7 @@ async def list_modules(
     db: Session = Depends(get_db),
 ):
     """List dynamic modules for a client."""
-    _get_client_or_404(client_id, db)
+    _get_own_client_or_403(client_id, db, current_user)
 
     query = db.query(ClientModule).filter(
         ClientModule.client_id == client_id,
@@ -762,7 +835,7 @@ async def get_module(
     db: Session = Depends(get_db),
 ):
     """Get a specific module definition."""
-    _get_client_or_404(client_id, db)
+    _get_own_client_or_403(client_id, db, current_user)
     module = db.query(ClientModule).filter(
         ClientModule.id == module_id,
         ClientModule.client_id == client_id,
@@ -949,7 +1022,7 @@ async def list_module_records(
     db: Session = Depends(get_db),
 ):
     """List records for a module with optional text search."""
-    _get_client_or_404(client_id, db)
+    _get_own_client_or_403(client_id, db, current_user)
 
     module = db.query(ClientModule).filter(
         ClientModule.id == module_id,
@@ -998,10 +1071,64 @@ async def list_module_records(
     )
     records = db.execute(text(records_sql), params).all()  # noqa: S608
 
+    # Batch-fetch this user's personal read/important markers for the page of records
+    record_ids = [r._mapping["id"] for r in records]
+    flags_by_record: dict[int, ClientRecordFlag] = {}
+    if record_ids:
+        flag_rows = db.query(ClientRecordFlag).filter(
+            ClientRecordFlag.record_id.in_(record_ids),
+            ClientRecordFlag.user_id == current_user.id,
+            ClientRecordFlag.is_deleted == False,
+        ).all()
+        flags_by_record = {f.record_id: f for f in flag_rows}
+
     return PaginatedResponse.create(
-        [_legacy_safe_record_response(r) for r in records],
+        [_legacy_safe_record_response(r, flags_by_record.get(r._mapping["id"])) for r in records],
         total, page, page_size,
     )
+
+
+@router.patch("/clients/{client_id}/modules/{module_id}/records/{record_id}/flag", response_model=ClientModuleRecordResponse)
+async def update_record_flag(
+    client_id: int,
+    module_id: int,
+    record_id: int,
+    data: ClientRecordFlagUpdate,
+    current_user: User = Depends(PermissionChecker("module.view")),
+    db: Session = Depends(get_db),
+):
+    """
+    Toggle the requesting user's personal 'important' / 'read' markers on a record.
+    Personal to this user — not shared with other users viewing the same record.
+    """
+    _get_own_client_or_403(client_id, db, current_user)
+
+    record = db.query(ClientModuleRecord).filter(
+        ClientModuleRecord.id == record_id,
+        ClientModuleRecord.module_id == module_id,
+        ClientModuleRecord.is_deleted == False,
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    flag = db.query(ClientRecordFlag).filter(
+        ClientRecordFlag.record_id == record_id,
+        ClientRecordFlag.user_id == current_user.id,
+    ).first()
+    if not flag:
+        flag = ClientRecordFlag(record_id=record_id, user_id=current_user.id, created_by=current_user.id)
+        db.add(flag)
+
+    if data.is_important is not None:
+        flag.is_important = data.is_important
+    if data.is_read is not None:
+        flag.is_read = data.is_read
+        flag.read_at = datetime.utcnow() if data.is_read else None
+
+    db.commit()
+    db.refresh(flag)
+
+    return _build_record_response(record, flag=flag)
 
 
 @router.get("/clients/{client_id}/modules/{module_id}/records/export")
@@ -1013,7 +1140,7 @@ async def export_module_records(
     db: Session = Depends(get_db),
 ):
     """Export all records for a module as CSV, Excel, or PDF."""
-    _get_client_or_404(client_id, db)
+    _get_own_client_or_403(client_id, db, current_user)
 
     module = db.query(ClientModule).filter(
         ClientModule.id == module_id,
@@ -1169,11 +1296,11 @@ async def create_module_record(
     client_id: int,
     module_id: int,
     data: ClientModuleRecordCreate,
-    current_user: User = Depends(PermissionChecker("module.create")),
+    current_user: User = Depends(PermissionChecker("module.record.create")),
     db: Session = Depends(get_db),
 ):
     """Create a record in a module."""
-    _get_client_or_404(client_id, db)
+    _get_own_client_or_403(client_id, db, current_user)
     module = db.query(ClientModule).filter(
         ClientModule.id == module_id,
         ClientModule.client_id == client_id,
@@ -1194,6 +1321,85 @@ async def create_module_record(
     db.refresh(record)
     email_sent = await _trigger_module_email(client_id, module, record.data, db)
     return _build_record_response(record, email_sent)
+
+
+@router.post("/clients/{client_id}/modules/{module_id}/records/import", response_model=MessageResponse)
+async def import_module_records(
+    client_id: int,
+    module_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(PermissionChecker("module.create")),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk import records into a module from a CSV file. Admin/staff only —
+    gated behind module.create (schema-level) so it is not exposed to clients.
+    """
+    _get_client_or_404(client_id, db)
+    module = db.query(ClientModule).filter(
+        ClientModule.id == module_id,
+        ClientModule.client_id == client_id,
+        ClientModule.is_deleted == False,
+    ).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    if not (file.filename or "").lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+    raw = await file.read()
+    try:
+        text_content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded")
+
+    reader = csv.DictReader(io.StringIO(text_content))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV file is empty or has no headers")
+
+    fields = module.fields or []
+    name_set = {f["name"] for f in fields}
+    label_to_name = {f.get("label", f["name"]): f["name"] for f in fields}
+
+    def resolve_column(col: str) -> str | None:
+        col = (col or "").strip()
+        return col if col in name_set else label_to_name.get(col)
+
+    column_map = {col: resolve_column(col) for col in reader.fieldnames}
+
+    created = 0
+    skipped = 0
+    errors: list[str] = []
+    for row_num, row in enumerate(reader, start=2):  # row 1 is the header
+        record_data = {}
+        for col, value in row.items():
+            mapped = column_map.get(col)
+            if mapped and value not in (None, ""):
+                record_data[mapped] = value
+
+        if not record_data:
+            skipped += 1
+            continue
+
+        try:
+            _validate_required_fields(module, record_data)
+        except HTTPException as e:
+            errors.append(f"Row {row_num}: {e.detail}")
+            skipped += 1
+            continue
+
+        db.add(ClientModuleRecord(module_id=module_id, data=record_data, created_by=current_user.id))
+        created += 1
+
+    db.commit()
+
+    message = f"Imported {created} record(s)."
+    if skipped:
+        message += f" Skipped {skipped} row(s)."
+    if errors:
+        message += " " + " | ".join(errors[:5])
+
+    return MessageResponse(message=message)
 
 
 @router.put("/clients/{client_id}/modules/{module_id}/records/{record_id}", response_model=ClientModuleRecordResponse)
@@ -1274,7 +1480,7 @@ async def get_api_key_status(
     db: Session = Depends(get_db),
 ):
     """Check if an API key exists (does not reveal the key)."""
-    client = _get_client_or_404(client_id, db)
+    client = _get_own_client_or_403(client_id, db, current_user)
     preview = (
         f"{client.api_key[:8]}...{client.api_key[-4:]}"
         if client.api_key else None

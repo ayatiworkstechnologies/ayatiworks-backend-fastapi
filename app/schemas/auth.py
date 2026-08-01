@@ -172,6 +172,17 @@ class UserCreate(UserBase):
         return v
 
 
+class PublicUserCreate(UserBase):
+    """Public registration payload without privileged assignments."""
+
+    password: str = Field(..., min_length=8)
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v):
+        return UserCreate.validate_password(v)
+
+
 class UserUpdate(BaseSchema):
     """User update schema."""
 

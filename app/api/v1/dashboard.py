@@ -13,15 +13,16 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user
+from app.config import settings
 from app.database import get_db
 from app.models.attendance import Attendance
 from app.models.auth import User
 from app.models.client import Client
+from app.models.client_module import ClientModule, ClientModuleRecord
 from app.models.company import Company
 from app.models.employee import Employee
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.leave import Leave, LeaveBalance
-from app.models.meta import MetaLead
 from app.models.organization import Department
 from app.models.project import Project, ProjectMember, Task, TaskStatus
 
@@ -408,7 +409,9 @@ def _get_client_stats(db: Session, user: User) -> dict[str, Any]:
             "my_projects_count": 0,
             "open_invoices_count": 0,
             "active_tasks_count": 0,
+            "my_leads_count": 0,
             "total_spent": 0,
+            "recent_leads": [],
         }
 
     # Projects for this client
@@ -435,10 +438,24 @@ def _get_client_stats(db: Session, user: User) -> dict[str, Any]:
         Task.status.in_(["todo", "in_progress"])
     ).count()
 
-    # Meta Leads for this client
-    meta_leads_count = db.query(MetaLead).filter(
-        MetaLead.client_id == client.id
-    ).count()
+    # Leads captured in this client's own "Leads" module (their own data, view/download only)
+    leads_query = db.query(ClientModuleRecord).join(ClientModule).filter(
+        ClientModule.client_id == client.id,
+        ClientModule.slug == "leads",
+        ClientModuleRecord.is_deleted == False,
+    )
+    my_leads_count = leads_query.count()
+    recent_lead_rows = leads_query.order_by(ClientModuleRecord.created_at.desc()).limit(10).all()
+    recent_leads = [
+        {
+            "id": rec.id,
+            "name": (rec.data or {}).get("name") or "-",
+            "email": (rec.data or {}).get("email") or "-",
+            "status": (rec.data or {}).get("status") or "-",
+            "created_at": rec.created_at.isoformat() if rec.created_at else None,
+        }
+        for rec in recent_lead_rows
+    ]
 
     # Total spent (sum of paid invoices)
     total_spent = db.query(func.sum(Invoice.total)).filter(
@@ -450,7 +467,8 @@ def _get_client_stats(db: Session, user: User) -> dict[str, Any]:
         "my_projects_count": my_projects,
         "open_invoices_count": open_invoices,
         "active_tasks_count": active_tasks,
-        "meta_leads_count": meta_leads_count,
+        "my_leads_count": my_leads_count,
+        "recent_leads": recent_leads,
         "total_spent": float(total_spent),
     }
 
@@ -591,7 +609,13 @@ def get_quick_actions(
             {"label": "View Projects", "href": "/projects", "icon": "HiOutlineFolder", "color": "violet"},
             {"label": "View Invoices", "href": "/invoices", "icon": "HiOutlineCurrencyDollar", "color": "amber"},
             {"label": "My Tasks", "href": "/tasks", "icon": "HiOutlineClipboardCheck", "color": "blue"},
-            {"label": "Support", "href": "/support", "icon": "HiOutlineSupport", "color": "emerald"},
+            {"label": "My Leads", "href": "/client-leads", "icon": "HiOutlineBadgeCheck", "color": "violet"},
+            {
+                "label": "Support",
+                "href": f"mailto:{settings.SUPPORT_EMAIL or settings.SMTP_FROM_EMAIL}",
+                "icon": "HiOutlineSupport",
+                "color": "emerald",
+            },
         ],
     }
 

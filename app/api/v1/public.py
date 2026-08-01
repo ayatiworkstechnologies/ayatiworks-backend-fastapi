@@ -22,11 +22,13 @@ from fastapi import (
     status,
 )
 from jinja2 import BaseLoader, Environment
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.api.deps import Depends, RoleChecker
 from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models.ai_bot import AIBot, BotConversation, BotMessage
 from app.models.auth import User
@@ -83,7 +85,9 @@ async def get_public_bot(
 
 
 @router.post("/bots/{bot_slug}/conversations", response_model=BotConversationResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")
 async def create_public_bot_conversation(
+    request: Request,
     bot_slug: str,
     data: dict = Body(default={}),
     db: Session = Depends(get_db)
@@ -117,7 +121,9 @@ async def create_public_bot_conversation(
 
 
 @router.post("/bots/{bot_slug}/conversations/{conversation_id}/messages", response_model=BotChatResponse)
+@limiter.limit("20/minute")
 async def send_public_bot_message(
+    request: Request,
     bot_slug: str,
     conversation_id: int,
     payload: BotMessageCreate,
@@ -183,6 +189,7 @@ async def send_public_bot_message(
 
 
 @router.post("/contact", response_model=ContactResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
 async def create_contact(
     request: Request,
     data: ContactCreate,
@@ -323,7 +330,9 @@ async def delete_contact(
 # =======================
 
 @router.post("/careers", response_model=CareerResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
 async def submit_application(
+    request: Request,
     background_tasks: BackgroundTasks,
     first_name: str = Form(..., min_length=2),
     last_name: str = Form(..., min_length=2),
@@ -503,7 +512,7 @@ async def delete_application(
 def get_client_by_api_key(
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: Session = Depends(get_db)
-) -> User:  # Returning Client actually
+) -> Client:
     client = db.query(Client).filter(Client.api_key == x_api_key, Client.is_deleted.is_(False)).first()
     if not client:
         raise HTTPException(status_code=401, detail="Invalid API Key")
@@ -511,7 +520,9 @@ def get_client_by_api_key(
 
 
 @router.post("/{client_slug}/send-email", response_model=MessageResponse)
+@limiter.limit("20/minute")
 async def public_send_email(
+    request: Request,
     client_slug: str,
     data: ClientSendEmailRequest,
     client: Client = Depends(get_client_by_api_key),
@@ -549,18 +560,24 @@ async def public_send_email(
     if not subject or not html_body:
         raise HTTPException(status_code=400, detail="Subject and body are required")
 
-    # Variable substitution using Jinja2
-    if data.variables:
-        jinja_env = Environment(loader=BaseLoader(), autoescape=True)
-        try:
-            subject_tmpl = jinja_env.from_string(subject)
-            subject = subject_tmpl.render(**data.variables)
+    # Render dynamic subjects and bodies with both supplied and built-in values.
+    from app.api.v1.client_modules import _build_mail_template_context
 
-            body_tmpl = jinja_env.from_string(html_body)
-            html_body = body_tmpl.render(**data.variables)
-        except Exception as e:
-            logger.error(f"Template rendering error: {e}")
-            raise HTTPException(status_code=400, detail=f"Template rendering error: {str(e)}") from e
+    render_context = _build_mail_template_context(
+        data.variables,
+        client=client,
+        template=template if data.template_id else None,
+    )
+    jinja_env = Environment(loader=BaseLoader(), autoescape=True)
+    try:
+        subject_tmpl = jinja_env.from_string(subject)
+        subject = subject_tmpl.render(**render_context).strip()
+
+        body_tmpl = jinja_env.from_string(html_body)
+        html_body = body_tmpl.render(**render_context)
+    except Exception as e:
+        logger.error(f"Template rendering error: {e}")
+        raise HTTPException(status_code=400, detail=f"Template rendering error: {str(e)}") from e
 
     # Use System SMTP if no client config
     if not smtp_config:
@@ -610,17 +627,20 @@ async def public_send_email(
         if data.bcc:
             recipients.extend(data.bcc)
 
-        context = ssl.create_default_context()
-        if smtp_config.port == 465:
-            server = smtplib.SMTP_SSL(smtp_config.host, smtp_config.port, context=context)
-        else:
-            server = smtplib.SMTP(smtp_config.host, smtp_config.port)
-            if smtp_config.use_tls:
-                server.starttls(context=context)
+        def _send_via_smtp():
+            context = ssl.create_default_context()
+            if smtp_config.port == 465:
+                server = smtplib.SMTP_SSL(smtp_config.host, smtp_config.port, context=context)
+            else:
+                server = smtplib.SMTP(smtp_config.host, smtp_config.port)
+                if smtp_config.use_tls:
+                    server.starttls(context=context)
 
-        server.login(smtp_config.username, smtp_config.password)
-        server.sendmail(smtp_config.from_email, recipients, msg.as_string())
-        server.quit()
+            server.login(smtp_config.username, smtp_config.password)
+            server.sendmail(smtp_config.from_email, recipients, msg.as_string())
+            server.quit()
+
+        await run_in_threadpool(_send_via_smtp)
 
         return MessageResponse(message=f"Email sent successfully to {data.to_email}")
 
@@ -676,7 +696,9 @@ async def public_list_records(
 
 
 @router.post("/{client_slug}/{module_slug}/records", response_model=ClientModuleRecordResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("30/minute")
 async def public_create_record(
+    request: Request,
     client_slug: str,
     module_slug: str,
     payload: dict = Body(...),
@@ -757,11 +779,19 @@ async def public_create_record(
                     html_body = template.html_body
 
                     try:
+                        from app.api.v1.client_modules import _build_mail_template_context
+
+                        render_context = _build_mail_template_context(
+                            record.data,
+                            client=client,
+                            module=module,
+                            template=template,
+                        )
                         subject_tmpl = jinja_env.from_string(subject)
-                        subject = subject_tmpl.render(**record.data)
+                        subject = subject_tmpl.render(**render_context).strip()
 
                         body_tmpl = jinja_env.from_string(html_body)
-                        html_body = body_tmpl.render(**record.data)
+                        html_body = body_tmpl.render(**render_context)
 
                         # Append file/image attachments
                         from app.api.v1.client_modules import _build_file_image_html
@@ -826,17 +856,20 @@ async def public_create_record(
 
                             msg.attach(MIMEText(wrapped_body, "html"))
 
-                            context = ssl.create_default_context()
-                            if smtp_config.port == 465:
-                                server = smtplib.SMTP_SSL(smtp_config.host, smtp_config.port, context=context)
-                            else:
-                                server = smtplib.SMTP(smtp_config.host, smtp_config.port)
-                                if smtp_config.use_tls:
-                                    server.starttls(context=context)
+                            def _send_via_smtp():
+                                context = ssl.create_default_context()
+                                if smtp_config.port == 465:
+                                    server = smtplib.SMTP_SSL(smtp_config.host, smtp_config.port, context=context)
+                                else:
+                                    server = smtplib.SMTP(smtp_config.host, smtp_config.port)
+                                    if smtp_config.use_tls:
+                                        server.starttls(context=context)
 
-                            server.login(smtp_config.username, smtp_config.password)
-                            server.sendmail(smtp_config.from_email, recipients, msg.as_string())
-                            server.quit()
+                                server.login(smtp_config.username, smtp_config.password)
+                                server.sendmail(smtp_config.from_email, recipients, msg.as_string())
+                                server.quit()
+
+                            await run_in_threadpool(_send_via_smtp)
 
         except Exception as e:
             logger.error(f"Failed to auto-send email for record {record.id}: {e}")

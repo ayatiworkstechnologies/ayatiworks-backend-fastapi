@@ -5,6 +5,8 @@ Invoice schemas.
 from datetime import date
 from decimal import Decimal
 
+from pydantic import Field
+
 from app.schemas.common import BaseSchema, TimestampSchema
 
 
@@ -97,7 +99,7 @@ class PaymentCreate(BaseSchema):
     """Payment create schema."""
 
     invoice_id: int
-    amount: Decimal
+    amount: Decimal = Field(..., gt=0)
     payment_date: date
     payment_method: str | None = None
     reference: str | None = None

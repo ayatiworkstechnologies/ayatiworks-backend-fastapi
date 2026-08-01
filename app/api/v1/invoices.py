@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import PermissionChecker
@@ -136,8 +137,6 @@ async def create_invoice(
     db: Session = Depends(get_db)
 ):
     """Create a new invoice."""
-    invoice_number = generate_invoice_number(db)
-
     # Calculate totals
     subtotal = Decimal(0)
     for item in data.items:
@@ -150,46 +149,60 @@ async def create_invoice(
     tax = (subtotal - discount) * Decimal(str(data.tax_rate / 100))
     total = subtotal - discount + tax
 
-    invoice = Invoice(
-        invoice_number=invoice_number,
-        client_id=data.client_id,
-        project_id=data.project_id,
-        reference=data.reference,
-        issue_date=data.issue_date,
-        due_date=data.due_date,
-        subtotal=subtotal,
-        discount=discount,
-        discount_type=data.discount_type,
-        tax=tax,
-        tax_rate=data.tax_rate,
-        total=total,
-        amount_due=total,
-        currency=data.currency,
-        notes=data.notes,
-        terms=data.terms,
-        created_by=current_user.id
-    )
+    for attempt in range(5):
+        invoice_number = generate_invoice_number(db)
 
-    db.add(invoice)
-    db.flush()
-
-    # Add invoice items
-    for i, item_data in enumerate(data.items):
-        item = InvoiceItem(
-            invoice_id=invoice.id,
-            description=item_data.description,
-            quantity=item_data.quantity,
-            rate=item_data.rate,
-            amount=item_data.rate * Decimal(str(item_data.quantity)),
-            hours=item_data.hours,
-            order=i
+        invoice = Invoice(
+            invoice_number=invoice_number,
+            client_id=data.client_id,
+            project_id=data.project_id,
+            reference=data.reference,
+            issue_date=data.issue_date,
+            due_date=data.due_date,
+            subtotal=subtotal,
+            discount=discount,
+            discount_type=data.discount_type,
+            tax=tax,
+            tax_rate=data.tax_rate,
+            total=total,
+            amount_due=total,
+            currency=data.currency,
+            notes=data.notes,
+            terms=data.terms,
+            created_by=current_user.id
         )
-        db.add(item)
 
-    db.commit()
-    db.refresh(invoice)
+        db.add(invoice)
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            if "invoice_number" not in str(exc).lower() or attempt == 4:
+                raise
+            continue
 
-    return InvoiceResponse.model_validate(invoice)
+        # Add invoice items
+        for i, item_data in enumerate(data.items):
+            item = InvoiceItem(
+                invoice_id=invoice.id,
+                description=item_data.description,
+                quantity=item_data.quantity,
+                rate=item_data.rate,
+                amount=item_data.rate * Decimal(str(item_data.quantity)),
+                hours=item_data.hours,
+                order=i
+            )
+            db.add(item)
+
+        db.commit()
+        db.refresh(invoice)
+
+        return InvoiceResponse.model_validate(invoice)
+
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Failed to generate a unique invoice number",
+    )
 
 
 @router.put("/{invoice_id}", response_model=InvoiceResponse)
@@ -220,6 +233,17 @@ async def update_invoice(
     for field, value in update_data.items():
         if hasattr(invoice, field) and field not in ['items']:
             setattr(invoice, field, value)
+
+    if "discount" in update_data or "tax_rate" in update_data:
+        taxable = invoice.subtotal - invoice.discount
+        if taxable < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Discount cannot exceed subtotal",
+            )
+        invoice.tax = taxable * Decimal(str(invoice.tax_rate / 100))
+        invoice.total = taxable + invoice.tax
+        invoice.amount_due = invoice.total - invoice.amount_paid
 
     db.commit()
     db.refresh(invoice)
@@ -296,6 +320,22 @@ async def record_payment(
 
     if not invoice:
         raise ResourceNotFoundError("Invoice", invoice_id)
+
+    if data.amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment amount must be positive",
+        )
+    if invoice.status == InvoiceStatus.PAID.value or invoice.amount_due <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice is already fully paid",
+        )
+    if data.amount > invoice.amount_due:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment exceeds amount due",
+        )
 
     payment = Payment(
         invoice_id=invoice_id,

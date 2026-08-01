@@ -99,7 +99,7 @@ def test_login_2fa_sends_otp(client, db, test_user, monkeypatch):
             "password": "TestPassword123!",
         },
     )
-    assert response.status_code == 202, response.text
+    assert response.status_code == 401, response.text
     payload = response.json()
     assert payload["error_code"] == "2FA_REQUIRED"
 

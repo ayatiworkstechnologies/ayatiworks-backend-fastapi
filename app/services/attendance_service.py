@@ -35,7 +35,7 @@ class AttendanceService:
         Mark employee check-in.
         """
         today = date.today()
-        now = datetime.now()
+        now = datetime.utcnow()
 
         # Check if already checked in today
         existing = self.db.query(Attendance).filter(
@@ -203,7 +203,7 @@ class AttendanceService:
         Mark employee check-out.
         """
         today = date.today()
-        now = datetime.now()
+        now = datetime.utcnow()
 
         attendance = self.db.query(Attendance).filter(
             Attendance.employee_id == employee_id,
@@ -341,13 +341,17 @@ class AttendanceService:
         """Get attendance summary for an employee."""
         attendances = self.get_employee_attendance(employee_id, from_date, to_date)
 
-        # Calculate total days
-        delta = to_date - from_date
-        total_days = delta.days + 1
+        # Calculate total working days (exclude weekends)
+        total_days = 0
+        current = from_date
+        while current <= to_date:
+            if current.weekday() < 5:  # Monday to Friday
+                total_days += 1
+            current += timedelta(days=1)
 
         # Count by status
         present_days = sum(1 for a in attendances if a.status == "present")
-        absent_days = total_days - len(attendances)
+        absent_days = max(0, total_days - len(attendances))
         late_days = sum(1 for a in attendances if a.is_late)
         wfh_days = sum(1 for a in attendances if a.work_mode == "wfh")
         half_days = sum(1 for a in attendances if a.is_half_day)
@@ -405,13 +409,12 @@ class AttendanceService:
 
         attendance.approval_status = status
         attendance.approved_by = approved_by
-        attendance.approved_at = datetime.now()
+        attendance.approved_at = datetime.utcnow()
         attendance.approval_notes = notes
 
         self.db.commit()
         self.db.refresh(attendance)
 
-        return attendance
         return attendance
 
     def mark_employee_on_leave(

@@ -4,7 +4,7 @@ Leave and holiday schemas.
 
 from datetime import date as date_type
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.common import BaseSchema, TimestampSchema
 
@@ -109,6 +109,14 @@ class LeaveCreate(BaseSchema):
     half_day_type: str | None = None  # first_half, second_half
     reason: str = Field(..., min_length=5)
     contact_during_leave: str | None = None
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.to_date < self.from_date:
+            raise ValueError("to_date must be on or after from_date")
+        if self.is_half_day and self.from_date != self.to_date:
+            raise ValueError("Half-day leave must start and end on the same date")
+        return self
 
 
 class LeaveUpdate(BaseSchema):
