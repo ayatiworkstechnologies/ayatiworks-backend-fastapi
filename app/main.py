@@ -74,7 +74,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         # Log request (skip health checks and static files to reduce noise)
         path = request.url.path
-        if not path.startswith(("/health", "/uploads")):
+        if not path.startswith(("/health", "/uploads", "/storage")):
             level = logging.WARNING if duration > 1.0 else logging.INFO
             logger.log(
                 level,
@@ -206,9 +206,10 @@ import os
 
 from fastapi.staticfiles import StaticFiles
 
-uploads_dir = settings.UPLOAD_DIR
-os.makedirs(uploads_dir, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+storage_dir = settings.UPLOAD_DIR
+os.makedirs(storage_dir, exist_ok=True)
+app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
+app.mount("/uploads", StaticFiles(directory=storage_dir), name="uploads")
 
 
 # Health check endpoints

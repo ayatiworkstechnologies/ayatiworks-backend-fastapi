@@ -38,9 +38,9 @@ class InvoiceCreate(BaseSchema):
     reference: str | None = None
     issue_date: date
     due_date: date
-    discount: Decimal = 0
+    discount: Decimal = Field(default=Decimal("0.00"), ge=0, description="Discount amount")
     discount_type: str = "fixed"
-    tax_rate: float = 0
+    tax_rate: float = Field(default=0.0, ge=0.0, description="Tax rate percentage")
     currency: str = "USD"
     notes: str | None = None
     terms: str | None = None
@@ -52,8 +52,8 @@ class InvoiceUpdate(BaseSchema):
 
     reference: str | None = None
     due_date: date | None = None
-    discount: Decimal | None = None
-    tax_rate: float | None = None
+    discount: Decimal | None = Field(default=None, ge=0, description="Discount amount")
+    tax_rate: float | None = Field(default=None, ge=0.0, description="Tax rate percentage")
     notes: str | None = None
     status: str | None = None
 

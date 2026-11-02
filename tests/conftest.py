@@ -2,7 +2,12 @@
 Test fixtures and configuration.
 """
 
+import os
 import tempfile
+
+# Ensure minimal required test settings exist before importing any app modules
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ.setdefault("SECRET_KEY", "ci-testing-dummy-secret-key-32-characters-minimum")
 from collections.abc import Generator
 from pathlib import Path
 from uuid import uuid4

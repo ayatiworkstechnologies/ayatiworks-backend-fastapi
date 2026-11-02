@@ -142,9 +142,11 @@ class LeaveService:
         balance = self.get_balance(leave.employee_id, leave.leave_type_id, year)
 
         if balance:
-            balance.pending -= leave.days
+            balance.pending = max(0, balance.pending - leave.days)
 
             if data.status == "approved":
+                if balance.available < leave.days:
+                    raise ValueError("Insufficient leave balance for approval")
                 balance.used += leave.days
 
                 # Create/Update Attendance Records for the leave period

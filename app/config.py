@@ -110,8 +110,9 @@ class Settings(BaseSettings):
     # Sentry (error tracking)
     SENTRY_DSN: str | None = Field(default=None, description="Sentry DSN for error tracking")
 
-    # File Storage (local, served via /uploads)
-    UPLOAD_DIR: str = "./uploads"
+    # File Storage (Local project storage server, served via /storage & /uploads)
+    UPLOAD_DIR: str = "./storage"
+    STORAGE_URL_PREFIX: str = "/storage"
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
     ALLOWED_EXTENSIONS: list[str] = ["jpg", "jpeg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx"]
 

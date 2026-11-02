@@ -106,6 +106,26 @@ class BotAIService:
             text_parts.append(f"Website source: {website_url}")
         return "\n\n".join(part.strip() for part in text_parts if part and part.strip())
 
+    @staticmethod
+    def _is_safe_public_url(hostname: str | None) -> bool:
+        if not hostname:
+            return False
+        host = hostname.strip().lower()
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
+        elif ":" in host and host.count(":") == 1:
+            host = host.split(":")[0]
+        if host in {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "::1"}:
+            return False
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False
+        except ValueError:
+            pass  # Domain name
+        return True
+
     def _normalize_website_url(self, url: str) -> str:
         normalized = (url or "").strip()
         if not normalized:
@@ -114,6 +134,8 @@ class BotAIService:
             normalized = f"https://{normalized}"
         parsed = urlparse(normalized)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return ""
+        if not self._is_safe_public_url(parsed.hostname):
             return ""
         return normalized
 

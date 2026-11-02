@@ -43,13 +43,26 @@ async def upload_bytes(
     file_path = local_dir / filename
     file_path.write_bytes(content)
 
+    url_prefix = getattr(settings, "STORAGE_URL_PREFIX", "/storage")
     return {
         "success": True,
-        "storage": "local",
-        "url": f"/uploads/{category}/{filename}",
+        "storage": "local_storage_server",
+        "url": f"{url_prefix}/{category}/{filename}",
         "filename": filename,
         "original_filename": original_filename,
         "size": len(content),
         "content_type": content_type,
-        "folder": f"/uploads/{category}",
+        "folder": f"{url_prefix}/{category}",
     }
+
+
+def _folder_path(category: str) -> str:
+    """Map categories to standardized storage paths."""
+    category_map = {
+        "avatars": "profile",
+        "profile": "profile",
+        "files": "documents",
+        "documents": "documents",
+    }
+    target = category_map.get(category, category)
+    return f"/ayati-admin/{target}"
